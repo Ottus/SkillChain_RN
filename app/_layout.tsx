@@ -1,3 +1,7 @@
+import 'react-native-get-random-values';
+import { Buffer } from 'buffer';
+global.Buffer = global.Buffer || Buffer;
+
 import { useEffect, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
