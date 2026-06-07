@@ -10,11 +10,12 @@ import {
   Alert, 
   ActivityIndicator 
 } from 'react-native';
-import { Theme } from '@/constants/Theme';
+import { Theme } from '@/constants/theme';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
+import { usePrivy } from '@privy-io/expo';
 
 interface WorkExperience {
   role: string;
@@ -43,18 +44,19 @@ interface Profile {
   education: Education[];
   certifications: Certification[];
   solana_address: string | null;
+  ethereum_address: string | null;
   avatar_url: string | null;
 }
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { user, logout } = usePrivy();
   const params = useLocalSearchParams();
   const targetUserId = params.userId as string | undefined;
 
   // Profile data state
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
 
   // Edit states
@@ -82,14 +84,13 @@ export default function ProfileScreen() {
 
   // Re-run loading on page focus or when userId parameter changes
   const loadProfileData = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
+    
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      setCurrentUserId(user.id);
-
-      const queryId = targetUserId || user.id;
-      const own = queryId === user.id;
+      const currentId = user.id;
+      const queryId = targetUserId || currentId;
+      const own = queryId === currentId;
       setIsOwnProfile(own);
 
       const { data, error } = await supabase
@@ -98,7 +99,7 @@ export default function ProfileScreen() {
         .eq('id', queryId)
         .single();
 
-      if (error) throw error;
+      if (error && error.code !== 'PGRST116') throw error;
 
       if (data) {
         const formattedProfile: Profile = {
@@ -112,6 +113,7 @@ export default function ProfileScreen() {
           education: Array.isArray(data.education) ? data.education : [],
           certifications: Array.isArray(data.certifications) ? data.certifications : [],
           solana_address: data.solana_address,
+          ethereum_address: data.ethereum_address,
           avatar_url: data.avatar_url,
         };
 
@@ -119,6 +121,26 @@ export default function ProfileScreen() {
         setEditName(formattedProfile.full_name || '');
         setEditBio(formattedProfile.bio || '');
         setEditRate(formattedProfile.hourly_rate ? String(formattedProfile.hourly_rate) : '');
+      } else if (own) {
+        // Create initial profile if it doesn't exist for the logged in user
+        const solanaWallet = user.linkedAccounts.find(a => (a as any).chainType === 'solana');
+        const ethereumWallet = user.linkedAccounts.find(a => (a as any).chainType === 'ethereum');
+
+        const newProfile = {
+          id: currentId,
+          email: user.email?.address || '',
+          full_name: user.email?.address?.split('@')[0] || 'SkillChain User',
+          skills: [],
+          work_experience: [],
+          education: [],
+          certifications: [],
+          solana_address: solanaWallet?.address || null,
+          ethereum_address: ethereumWallet?.address || null,
+        };
+        
+        const { error: insertError } = await supabase.from('profile').insert(newProfile);
+        if (insertError) console.error('Error creating initial profile:', insertError);
+        else setProfile(newProfile as any);
       }
     } catch (e: any) {
       console.error('Error loading profile:', e.message);
@@ -126,12 +148,16 @@ export default function ProfileScreen() {
     } finally {
       setLoading(false);
     }
-  }, [targetUserId]);
+  }, [targetUserId, user]);
 
-  useFocusEffect(loadProfileData);
+  useFocusEffect(
+    useCallback(() => {
+      loadProfileData();
+    }, [loadProfileData])
+  );
 
   const handleSaveBasicInfo = async () => {
-    if (!profile || !currentUserId) return;
+    if (!profile || !user) return;
     
     try {
       const { error } = await supabase
@@ -141,7 +167,7 @@ export default function ProfileScreen() {
           bio: editBio.trim(),
           hourly_rate: editRate ? parseFloat(editRate) : null
         })
-        .eq('id', currentUserId);
+        .eq('id', user.id);
 
       if (error) throw error;
 
@@ -160,14 +186,14 @@ export default function ProfileScreen() {
   };
 
   const handleAddSkill = async () => {
-    if (!newSkill.trim() || !profile || !currentUserId) return;
+    if (!newSkill.trim() || !profile || !user) return;
     const updatedSkills = [...profile.skills, newSkill.trim().toUpperCase()];
 
     try {
       const { error } = await supabase
         .from('profile')
         .update({ skills: updatedSkills })
-        .eq('id', currentUserId);
+        .eq('id', user.id);
 
       if (error) throw error;
 
@@ -179,14 +205,14 @@ export default function ProfileScreen() {
   };
 
   const handleRemoveSkill = async (skillToRemove: string) => {
-    if (!profile || !currentUserId || !isOwnProfile) return;
+    if (!profile || !user || !isOwnProfile) return;
     const updatedSkills = profile.skills.filter(s => s !== skillToRemove);
 
     try {
       const { error } = await supabase
         .from('profile')
         .update({ skills: updatedSkills })
-        .eq('id', currentUserId);
+        .eq('id', user.id);
 
       if (error) throw error;
 
@@ -197,7 +223,7 @@ export default function ProfileScreen() {
   };
 
   const handleAddWorkExperience = async () => {
-    if (!workRole.trim() || !workCompany.trim() || !profile || !currentUserId) return;
+    if (!workRole.trim() || !workCompany.trim() || !profile || !user) return;
     const newWork: WorkExperience = {
       role: workRole.trim(),
       company: workCompany.trim(),
@@ -209,7 +235,7 @@ export default function ProfileScreen() {
       const { error } = await supabase
         .from('profile')
         .update({ work_experience: updatedWork })
-        .eq('id', currentUserId);
+        .eq('id', user.id);
 
       if (error) throw error;
 
@@ -224,7 +250,7 @@ export default function ProfileScreen() {
   };
 
   const handleAddEducation = async () => {
-    if (!eduInstitution.trim() || !eduDegree.trim() || !profile || !currentUserId) return;
+    if (!eduInstitution.trim() || !eduDegree.trim() || !profile || !user) return;
     const newEdu: Education = {
       institution: eduInstitution.trim(),
       degree: eduDegree.trim()
@@ -235,7 +261,7 @@ export default function ProfileScreen() {
       const { error } = await supabase
         .from('profile')
         .update({ education: updatedEdu })
-        .eq('id', currentUserId);
+        .eq('id', user.id);
 
       if (error) throw error;
 
@@ -249,7 +275,7 @@ export default function ProfileScreen() {
   };
 
   const handleAddCertification = async () => {
-    if (!certName.trim() || !certIssuer.trim() || !profile || !currentUserId) return;
+    if (!certName.trim() || !certIssuer.trim() || !profile || !user) return;
     const newCert: Certification = {
       name: certName.trim(),
       issuer: certIssuer.trim()
@@ -260,7 +286,7 @@ export default function ProfileScreen() {
       const { error } = await supabase
         .from('profile')
         .update({ certifications: updatedCerts })
-        .eq('id', currentUserId);
+        .eq('id', user.id);
 
       if (error) throw error;
 
@@ -280,7 +306,7 @@ export default function ProfileScreen() {
         text: 'Log Out', 
         style: 'destructive',
         onPress: async () => {
-          await supabase.auth.signOut();
+          await logout();
         } 
       }
     ]);
@@ -343,11 +369,24 @@ export default function ProfileScreen() {
               <Text style={styles.username}>{profile.full_name || 'Skillchain User'}</Text>
             )}
             <Text style={styles.email}>{profile.email}</Text>
-            {profile.solana_address ? (
-              <Text style={styles.walletAddr} numberOfLines={1}>
-                {profile.solana_address.substring(0, 6)}...{profile.solana_address.slice(-4)}
-              </Text>
-            ) : null}
+            <View style={styles.walletsRow}>
+              {profile.solana_address && (
+                <View style={styles.miniBadge}>
+                  <Ionicons name="flash" size={10} color="#3B82F6" />
+                  <Text style={styles.walletAddrMini}>
+                    {profile.solana_address.substring(0, 4)}...{profile.solana_address.slice(-4)}
+                  </Text>
+                </View>
+              )}
+              {profile.ethereum_address && (
+                <View style={[styles.miniBadge, { backgroundColor: '#EEF2FF' }]}>
+                  <Ionicons name="logo-ethereum" size={10} color="#6366F1" />
+                  <Text style={[styles.walletAddrMini, { color: '#6366F1' }]}>
+                    {profile.ethereum_address.substring(0, 4)}...{profile.ethereum_address.slice(-4)}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         </Animated.View>
 
@@ -741,11 +780,24 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '500',
   },
-  walletAddr: {
-    fontSize: 12,
+  walletsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6,
+  },
+  miniBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCE4F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  walletAddrMini: {
+    fontSize: 10,
     color: '#3B82F6',
-    marginTop: 4,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   section: {
     marginBottom: 24,

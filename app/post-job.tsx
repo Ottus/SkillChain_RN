@@ -11,14 +11,16 @@ import {
   Alert, 
   ActivityIndicator 
 } from 'react-native';
-import { Theme } from '@/constants/Theme';
+import { Theme } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
+import { usePrivy } from '@privy-io/expo';
 
 export default function PostJobScreen() {
   const router = useRouter();
+  const { user } = usePrivy();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [salary, setSalary] = useState('');
@@ -34,11 +36,13 @@ export default function PostJobScreen() {
       return;
     }
 
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to post a job.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('You must be logged in to post a job.');
-
       const { error } = await supabase.from('jobs').insert({
         user_id: user.id,
         title: title.trim(),

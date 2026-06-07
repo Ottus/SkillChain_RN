@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Theme } from '@/constants/Theme';
+import { Theme } from '@/constants/theme';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
 import { Ionicons } from '@expo/vector-icons';
+import { usePrivy } from '@privy-io/expo';
 
 interface ChatThread {
   otherUserId: string;
@@ -15,23 +16,25 @@ interface ChatThread {
 
 export default function ChatScreen() {
   const router = useRouter();
+  const { user } = usePrivy();
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [suggestedUsers, setSuggestedUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
   useFocusEffect(
     React.useCallback(() => {
       fetchThreads();
-    }, [])
+    }, [user])
   );
 
   const fetchThreads = async () => {
+    if (!user) return;
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      // user.id is available for filtering
-
+      console.log('[ChatScreen] Fetching threads for DID:', user.id);
       // 1. Fetch messages involving the user
+      // NOTE: If this fails with 'invalid input syntax for type uuid', 
+      // the 'sender_id' and 'receiver_id' columns in Supabase must be changed from UUID to TEXT.
       const { data: messages, error: msgError } = await supabase
         .from('messages')
         .select('*')

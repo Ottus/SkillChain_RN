@@ -1,54 +1,67 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { Theme } from '@/constants/Theme';
+import { Theme } from '@/constants/theme';
 import { useRouter } from 'expo-router';
 import { StyledInput } from '@/components/StyledInput';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInUp } from 'react-native-reanimated';
-import { supabase } from '@/constants/Supabase';
+import Animated, { FadeInUp, FadeIn, FadeOut } from 'react-native-reanimated';
+import { useLoginWithEmail, usePrivy } from '@privy-io/expo';
 
 export default function SignupScreen() {
   const router = useRouter();
+  const { authenticated, ready } = usePrivy();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [walletAddress, setWalletAddress] = useState('');
+  const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isCodeSent, setIsCodeSent] = useState(false);
 
-  const connectMockWallet = () => {
-    const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-    const mockAddr = '5YNZ' + Array.from({ length: 36 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    setWalletAddress(mockAddr);
-    Alert.alert('Solana Wallet Connected', `Mock address successfully connected:\n${mockAddr}`);
-  };
+  // If already authenticated, redirecting happens in _layout, but we show loading here
+  if (ready && authenticated) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Theme.colors.primary} />
+        </View>
+      </View>
+    );
+  }
 
-  const handleSignup = async () => {
-    if (!email || !password || !fullName) {
+  const { sendCode, loginWithCode } = useLoginWithEmail({
+    onSendCodeSuccess: () => {
+      setIsCodeSent(true);
+      setLoading(false);
+    },
+    onLoginSuccess: (user) => {
+      // Post-signup logic (like saving fullName to Supabase) would go here
+      setLoading(false);
+    },
+    onError: (error) => {
+      Alert.alert('Auth Error', error.message);
+      setLoading(false);
+    }
+  });
+
+  const handleAuth = async () => {
+    if (!email || (!isCodeSent && !fullName)) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
+
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            solana_address: walletAddress || null,
-          }
-        }
-      });
-      
-      if (error) {
-        Alert.alert('Sign Up Error', error.message);
+      if (!isCodeSent) {
+        await sendCode({ email });
       } else {
-        // Auth state changes will automatically route the user
-        Alert.alert('Success', 'Check your email for confirmation if required!');
+        if (!otp) {
+          Alert.alert('Error', 'Please enter the verification code.');
+          setLoading(false);
+          return;
+        }
+        await loginWithCode({ code: otp, email });
       }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'An unexpected error occurred.');
-    } finally {
       setLoading(false);
     }
   };
@@ -61,65 +74,63 @@ export default function SignupScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
         <Animated.View entering={FadeInUp.duration(600)} style={styles.content}>
           <View style={styles.header}>
+            <View style={styles.logoContainer}>
+              <Ionicons name="sparkles" size={40} color={Theme.colors.primary} />
+            </View>
             <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Join the SkillChain network</Text>
+            <Text style={styles.subtitle}>
+              {isCodeSent ? `Verify your email to join\n${email}` : 'Join SkillChain to start your Web3 journey'}
+            </Text>
           </View>
 
           <View style={styles.form}>
-            <StyledInput
-              placeholder="Full Name"
-              value={fullName}
-              onChangeText={setFullName}
-            />
-            <StyledInput
-              placeholder="Email"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            <StyledInput
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
+            {!isCodeSent ? (
+              <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.inputGroup}>
+                <StyledInput
+                  placeholder="Your Full Name"
+                  value={fullName}
+                  onChangeText={setFullName}
+                />
+                <StyledInput
+                  placeholder="Email Address"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </Animated.View>
+            ) : (
+              <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.otpSection}>
+                <StyledInput
+                  placeholder="6-digit code"
+                  value={otp}
+                  onChangeText={setOtp}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+                <TouchableOpacity onPress={() => setIsCodeSent(false)} style={styles.backLink}>
+                  <Ionicons name="arrow-back" size={14} color={Theme.colors.primary} />
+                  <Text style={styles.backLinkText}>Change email or name</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
 
             <TouchableOpacity 
-              style={[
-                styles.walletButton, 
-                walletAddress ? { borderColor: '#10B981', backgroundColor: '#ECFDF5' } : null
-              ]}
-              onPress={connectMockWallet}
-            >
-              <Ionicons 
-                name={walletAddress ? "checkmark-circle" : "wallet"} 
-                size={20} 
-                color={walletAddress ? '#10B981' : Theme.colors.text} 
-                style={styles.walletIcon} 
-              />
-              <Text style={[styles.walletButtonText, walletAddress ? { color: '#10B981' } : null]}>
-                {walletAddress 
-                  ? `Connected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-                  : "Connect Solana Wallet"
-                }
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.bottomSection}>
-            <TouchableOpacity 
-              style={styles.submitButton}
-              onPress={handleSignup}
+              style={[styles.primaryButton, loading && styles.buttonDisabled]}
+              onPress={handleAuth}
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator size="small" color="#4B5563" />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Text style={styles.submitButtonText}>Complete Sign Up</Text>
+                <Text style={styles.primaryButtonText}>
+                  {isCodeSent ? 'Verify & Get Started' : 'Join SkillChain'}
+                </Text>
               )}
             </TouchableOpacity>
+          </View>
 
+          <View style={styles.footer}>
             <TouchableOpacity 
               style={styles.loginRedirect}
               onPress={() => router.push('/(auth)/login')}
@@ -141,74 +152,96 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Theme.colors.background,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   scrollContent: {
     flexGrow: 1,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 32,
     paddingTop: 80,
     paddingBottom: 40,
-    justifyContent: 'space-between',
   },
   header: {
-    marginBottom: 40,
+    alignItems: 'center',
+    marginBottom: 48,
+  },
+  logoContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   title: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: Theme.colors.text,
-    letterSpacing: -0.5,
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#111827',
+    letterSpacing: -1,
   },
   subtitle: {
-    fontSize: 16,
-    color: Theme.colors.textMuted,
-    marginTop: 8,
+    fontSize: 15,
+    color: '#6B7280',
+    marginTop: 12,
+    textAlign: 'center',
+    lineHeight: 22,
     fontWeight: '500',
   },
   form: {
-    flex: 1,
-    justifyContent: 'flex-start',
-    gap: 4,
-  },
-  walletButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Theme.colors.surface,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 16,
-    paddingVertical: 18,
-    marginTop: 12,
-  },
-  walletIcon: {
-    marginRight: 10,
-  },
-  walletButtonText: {
-    color: Theme.colors.text,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  bottomSection: {
-    marginTop: 40,
     gap: 16,
   },
-  submitButton: {
+  inputGroup: {
+    gap: 12,
+  },
+  otpSection: {
+    gap: 8,
+  },
+  primaryButton: {
     width: '100%',
-    backgroundColor: '#E5E7EB', // matching screenshots' clean button background
+    backgroundColor: Theme.colors.primary,
     borderRadius: 16,
     paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: Theme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+    marginTop: 8,
   },
-  submitButtonText: {
-    color: '#4B5563', // dark text matching screenshot style
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },
-  loginRedirect: {
+  backLink: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    gap: 6,
+  },
+  backLinkText: {
+    color: Theme.colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  footer: {
+    marginTop: 'auto',
+    alignItems: 'center',
+    paddingTop: 40,
+  },
+  loginRedirect: {
     paddingVertical: 8,
   },
   loginRedirectText: {

@@ -12,11 +12,12 @@ import {
   Alert, 
   Linking 
 } from 'react-native';
-import { Theme } from '@/constants/Theme';
+import { Theme } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
 import * as ImagePicker from 'expo-image-picker';
+import { usePrivy } from '@privy-io/expo';
 
 interface Post {
   id: string;
@@ -50,12 +51,12 @@ interface Comment {
 }
 
 export default function HomeFeedScreen() {
+  const { user } = usePrivy();
   // Feed states
   const [posts, setPosts] = useState<Post[]>([]);
   const [likes, setLikes] = useState<Like[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Interaction states
   const [activeSharePostId, setActiveSharePostId] = useState<string | null>(null);
@@ -70,20 +71,16 @@ export default function HomeFeedScreen() {
   const [submittingPost, setSubmittingPost] = useState(false);
 
   const fetchInitialData = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
-
       await refreshFeed();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to load feed data.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchInitialData();
@@ -145,9 +142,9 @@ export default function HomeFeedScreen() {
 
   // Like management
   const handleLikeToggle = async (post: Post) => {
-    if (!currentUserId) return;
+    if (!user) return;
 
-    const existingLike = likes.find(l => l.post_id === post.id && l.user_id === currentUserId);
+    const existingLike = likes.find(l => l.post_id === post.id && l.user_id === user.id);
 
     try {
       if (existingLike) {
@@ -157,7 +154,7 @@ export default function HomeFeedScreen() {
       } else {
         const newLike = {
           post_id: post.id,
-          user_id: currentUserId
+          user_id: user.id
         };
         // Insert
         const { data, error } = await supabase
@@ -171,10 +168,10 @@ export default function HomeFeedScreen() {
           setLikes(prev => [...prev, data]);
           
           // Send notification to author
-          if (post.user_id !== currentUserId) {
+          if (post.user_id !== user.id) {
             await supabase.from('notifications').insert({
               receiver_id: post.user_id,
-              sender_id: currentUserId,
+              sender_id: user.id,
               type: 'like',
               post_id: post.id,
               content: 'liked your post'
@@ -190,13 +187,13 @@ export default function HomeFeedScreen() {
 
   // Comment management
   const handleAddComment = async (post: Post) => {
-    if (!newCommentText.trim() || !currentUserId) return;
+    if (!newCommentText.trim() || !user) return;
     setSubmittingComment(true);
 
     try {
       const newComment = {
         post_id: post.id,
-        user_id: currentUserId,
+        user_id: user.id,
         content: newCommentText.trim()
       };
 
@@ -223,10 +220,10 @@ export default function HomeFeedScreen() {
         setNewCommentText('');
         
         // Notify Author
-        if (post.user_id !== currentUserId) {
+        if (post.user_id !== user.id) {
           await supabase.from('notifications').insert({
             receiver_id: post.user_id,
-            sender_id: currentUserId,
+            sender_id: user.id,
             type: 'comment',
             post_id: post.id,
             content: `commented: "${newCommentText.substring(0, 30)}..."`
@@ -260,13 +257,14 @@ export default function HomeFeedScreen() {
   };
 
   const uploadImageToStorage = async (uri: string): Promise<string | null> => {
+    if (!user) return null;
     try {
       const response = await fetch(uri);
       const blob = await response.blob();
       const arrayBuffer = await new Response(blob).arrayBuffer();
       
       const fileExt = uri.split('.').pop() || 'jpg';
-      const fileName = `${currentUserId}_${Date.now()}.${fileExt}`;
+      const fileName = `${user.id}_${Date.now()}.${fileExt}`;
       
       const { error } = await supabase.storage
         .from('post-images')
@@ -292,6 +290,7 @@ export default function HomeFeedScreen() {
 
   // Post Submission
   const handlePublishPost = async () => {
+    if (!user) return;
     if (!createContent.trim() && !createImageUri) {
       Alert.alert('Error', 'Post content cannot be empty.');
       return;
@@ -305,7 +304,7 @@ export default function HomeFeedScreen() {
       }
 
       const newPost = {
-        user_id: currentUserId,
+        user_id: user.id,
         content: createContent.trim(),
         image_url: finalImageUrl
       };
@@ -377,9 +376,8 @@ export default function HomeFeedScreen() {
           ) : (
             posts.map((post) => {
               const postLikes = likes.filter(l => l.post_id === post.id);
-              const isLiked = likes.some(l => l.post_id === post.id && l.user_id === currentUserId);
+              const isLiked = likes.some(l => l.post_id === post.id && l.user_id === user?.id);
               const postComments = comments.filter(c => c.post_id === post.id);
-
               return (
                 <Animated.View 
                   key={post.id} 
