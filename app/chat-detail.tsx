@@ -26,7 +26,28 @@ import {
   SystemProgram, 
   LAMPORTS_PER_SOL 
 } from '@solana/web3.js';
-import { usePrivy } from '@privy-io/expo';
+import { 
+  createTransferInstruction, 
+  getAssociatedTokenAddress, 
+  TOKEN_PROGRAM_ID,
+} from '@solana/spl-token';
+import { usePrivy, useWallets } from '@privy-io/expo';
+
+const COMMON_EVM_TOKENS = [
+  { symbol: 'ETH', name: 'Ethereum', address: 'native', decimals: 18 },
+  { symbol: 'USDC', name: 'USD Coin', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6 },
+  { symbol: 'USDT', name: 'Tether', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 },
+];
+
+interface TokenInfo {
+  symbol: string;
+  name: string;
+  mint?: string; // Solana
+  address?: string; // EVM
+  decimals: number;
+  balance: string;
+  isNative?: boolean;
+}
 
 const APP_IDENTITY = {
   name: 'SkillChain',
@@ -58,6 +79,11 @@ export default function ChatDetailScreen() {
   const [receiverSolWallet, setReceiverSolWallet] = useState<string | null>(null);
   const [receiverEthWallet, setReceiverEthWallet] = useState<string | null>(null);
 
+  // Token states
+  const [availableTokens, setAvailableTokens] = useState<TokenInfo[]>([]);
+  const [selectedToken, setSelectedToken] = useState<TokenInfo | null>(null);
+  const [fetchingBalances, setFetchingBalances] = useState(false);
+
   // Identify Wallets from linkedAccounts
   const wallets = user?.linkedAccounts || [];
   const embeddedSolana = wallets.find(w => (w as any).walletClientType === 'privy' && (w as any).chainType === 'solana');
@@ -72,6 +98,69 @@ export default function ChatDetailScreen() {
   const receiverWallet = tipChain === 'solana' ? receiverSolWallet : receiverEthWallet;
 
   const scrollViewRef = useRef<ScrollView>(null);
+
+  const fetchBalances = useCallback(async () => {
+    if (!user || !currentUserWallet) return;
+    setFetchingBalances(true);
+    
+    try {
+      if (tipChain === 'solana') {
+        const connection = new Connection(clusterApiUrl('mainnet-beta'), 'confirmed');
+        const owner = new PublicKey(currentSolWallet!);
+        
+        // Fetch native SOL
+        const solBalance = await connection.getBalance(owner);
+        const solToken: TokenInfo = {
+          symbol: 'SOL',
+          name: 'Solana',
+          isNative: true,
+          decimals: 9,
+          balance: (solBalance / LAMPORTS_PER_SOL).toFixed(4),
+        };
+
+        // Fetch SPL tokens
+        const tokenAccounts = await connection.getParsedTokenAccountsByOwner(owner, {
+          programId: TOKEN_PROGRAM_ID,
+        });
+        
+        const splTokens: TokenInfo[] = tokenAccounts.value.map(acc => {
+          const info = acc.account.data.parsed.info;
+          return {
+            symbol: 'Token', // We'd need an indexer for real symbols
+            name: info.mint.substring(0, 8),
+            mint: info.mint,
+            decimals: info.tokenAmount.decimals,
+            balance: info.tokenAmount.uiAmountString,
+          };
+        }).filter(t => parseFloat(t.balance) > 0);
+
+        const allTokens = [solToken, ...splTokens];
+        setAvailableTokens(allTokens);
+        setSelectedToken(allTokens[0]);
+      } else {
+        const ethToken: TokenInfo = {
+          symbol: 'ETH',
+          name: 'Ethereum',
+          isNative: true,
+          address: 'native',
+          decimals: 18,
+          balance: 'Check wallet', 
+        };
+        
+        const allTokens = [ethToken, ...COMMON_EVM_TOKENS.slice(1).map(t => ({ ...t, balance: '0.00' }))];
+        setAvailableTokens(allTokens);
+        setSelectedToken(ethToken);
+      }
+    } catch (e) {
+      console.error('Error fetching balances:', e);
+    } finally {
+      setFetchingBalances(false);
+    }
+  }, [user, tipChain, currentSolWallet, currentEthWallet]);
+
+  useEffect(() => {
+    if (showTipModal) fetchBalances();
+  }, [showTipModal, fetchBalances]);
 
   const setupChat = useCallback(async () => {
     if (!userId || !user) return;
@@ -179,17 +268,22 @@ export default function ChatDetailScreen() {
 
   const handleSendTip = async () => {
     if (!tipAmount || isNaN(parseFloat(tipAmount)) || parseFloat(tipAmount) <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid SOL amount.');
+      Alert.alert('Invalid Amount', 'Please enter a valid amount.');
       return;
     }
 
-    if (!currentUserWallet) {
-      Alert.alert('No Wallet', 'Please ensure your embedded wallet is ready or connect an external one.');
+    if (!selectedToken) {
+      Alert.alert('No Token', 'Please select a token to send.');
       return;
     }
 
-    if (!receiverWallet) {
-      Alert.alert('No Receiver Wallet', `${name} hasn't connected a wallet yet.`);
+    if (!currentSolWallet) {
+      Alert.alert('No Wallet', 'Please ensure your embedded wallet is ready.');
+      return;
+    }
+
+    if (!receiverSolWallet) {
+      Alert.alert('No Receiver Wallet', `${name} hasn't connected a Solana wallet yet.`);
       return;
     }
 
@@ -197,115 +291,122 @@ export default function ChatDetailScreen() {
 
     try {
       const connection = new Connection(clusterApiUrl('mainnet-beta'), 'confirmed');
-      const senderPublicKey = new PublicKey(currentUserWallet);
-      const recipientPublicKey = new PublicKey(receiverWallet);
-      const lamports = Math.floor(parseFloat(tipAmount) * LAMPORTS_PER_SOL);
+      const senderPublicKey = new PublicKey(currentSolWallet);
+      const recipientPublicKey = new PublicKey(receiverSolWallet);
 
       let signature: string;
 
-      if (embeddedSolana) {
-        // USE PRIVY EMBEDDED WALLET
-        const provider = await embeddedSolana.getProvider();
-        const { blockhash } = await connection.getLatestBlockhash();
-        
-        const transaction = new Transaction({
-          feePayer: senderPublicKey,
-          recentBlockhash: blockhash,
-        }).add(
+      if (selectedToken.isNative) {
+        // SOL Transfer
+        const transaction = new Transaction().add(
           SystemProgram.transfer({
             fromPubkey: senderPublicKey,
             toPubkey: recipientPublicKey,
-            lamports,
+            lamports: Math.floor(parseFloat(tipAmount) * LAMPORTS_PER_SOL),
           })
         );
-
-        // Privy's Solana provider supports standard request methods
-        const base64Transaction = transaction.serialize({ requireAllSignatures: false }).toString('base64');
-        const result = await provider.request({
-          method: 'signAndSendTransaction',
-          params: {
-            transaction: base64Transaction,
-            connection
-          }
-        });
-        signature = result as string;
+        
+        signature = await signAndSendSolana(transaction, connection);
       } else {
-        // FALLBACK TO MWA
-        signature = await transact(async (wallet) => {
-          await wallet.authorize({
-            cluster: 'mainnet-beta',
-            identity: APP_IDENTITY,
-          });
+        // SPL Token Transfer
+        const mintPublicKey = new PublicKey(selectedToken.mint!);
+        const fromAta = await getAssociatedTokenAddress(mintPublicKey, senderPublicKey);
+        const toAta = await getAssociatedTokenAddress(mintPublicKey, recipientPublicKey);
 
-          const { blockhash } = await connection.getLatestBlockhash();
-          const transaction = new Transaction({
-            feePayer: senderPublicKey,
-            recentBlockhash: blockhash,
-          }).add(
-            SystemProgram.transfer({
-              fromPubkey: senderPublicKey,
-              toPubkey: recipientPublicKey,
-              lamports,
-            })
-          );
+        const transaction = new Transaction().add(
+          createTransferInstruction(
+            fromAta,
+            toAta,
+            senderPublicKey,
+            Math.floor(parseFloat(tipAmount) * Math.pow(10, selectedToken.decimals))
+          )
+        );
 
-          const signatures = await wallet.signAndSendTransactions({
-            transactions: [transaction],
-          });
-          return signatures[0];
-        });
+        signature = await signAndSendSolana(transaction, connection);
       }
 
-      console.log('Transaction Signature:', signature);
-      
-      const tipMsg = `💸 Sent a tip of ${tipAmount} ${tipChain === 'solana' ? 'SOL' : 'ETH'}\nSig: ${signature.slice(0, 8)}...`;
+      const tipMsg = `💸 Sent ${tipAmount} ${selectedToken.symbol}\nSig: ${signature.slice(0, 8)}...`;
       await handleSendMessage(tipMsg);
       
       setSendingTip(false);
       setShowTipModal(false);
       setTipAmount('');
-      Alert.alert('Success', `Successfully tipped ${tipAmount} ${tipChain === 'solana' ? 'SOL' : 'ETH'} to ${name}!`);
+      Alert.alert('Success', `Successfully tipped ${tipAmount} ${selectedToken.symbol} to ${name}!`);
     } catch (e: any) {
       console.error('Tipping error:', e);
       setSendingTip(false);
-      Alert.alert('Transaction Failed', e.message || 'Could not complete the tip transaction.');
+      Alert.alert('Transaction Failed', e.message || 'Could not complete the transaction.');
+    }
+  };
+
+  const signAndSendSolana = async (transaction: Transaction, connection: Connection) => {
+    const senderPublicKey = new PublicKey(currentSolWallet!);
+    if (embeddedSolana) {
+      const provider = await (embeddedSolana as any).getProvider();
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = senderPublicKey;
+      
+      const base64Transaction = transaction.serialize({ requireAllSignatures: false }).toString('base64');
+      return await provider.request({
+        method: 'signAndSendTransaction',
+        params: { transaction: base64Transaction, connection }
+      }) as string;
+    } else {
+      return await transact(async (wallet) => {
+        await wallet.authorize({ cluster: 'mainnet-beta', identity: APP_IDENTITY });
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = senderPublicKey;
+        const sigs = await wallet.signAndSendTransactions({ transactions: [transaction] });
+        return sigs[0];
+      });
     }
   };
 
   const handleSendEvmTip = async () => {
-    if (!embeddedEthereum) {
-      Alert.alert('Embedded Wallet Required', 'Please use your embedded EVM wallet for this transaction.');
+    if (!selectedToken || !receiverEthWallet) {
+      Alert.alert('Error', 'Token or receiver address missing.');
       return;
     }
-
-    if (!receiverEthWallet) {
-      Alert.alert('No Receiver Wallet', `${name} hasn't connected an Ethereum wallet yet.`);
-      return;
-    }
-
     setSendingTip(true);
+
     try {
-      const provider = await embeddedEthereum.getProvider();
+      const provider = await (embeddedEthereum as any)?.getProvider();
+      if (!provider) throw new Error('No EVM provider');
       
-      // Convert amount to hex wei (basic implementation)
-      const weiAmount = '0x' + (BigInt(Math.floor(parseFloat(tipAmount) * 1e18))).toString(16);
+      const amount = BigInt(Math.floor(parseFloat(tipAmount) * Math.pow(10, selectedToken.decimals)));
+      let txHash: string;
 
-      const txHash = await provider.request({
-        method: 'eth_sendTransaction',
-        params: [{
-          from: embeddedEthereum.address,
-          to: receiverEthWallet,
-          value: weiAmount,
-        }]
-      });
+      if (selectedToken.isNative) {
+        txHash = await provider.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: currentEthWallet,
+            to: receiverEthWallet,
+            value: '0x' + amount.toString(16),
+          }]
+        });
+      } else {
+        // ERC-20 Transfer: method ID a9059cbb for transfer(address,uint256)
+        const data = `0xa9059cbb${receiverEthWallet.slice(2).padStart(64, '0')}${amount.toString(16).padStart(64, '0')}`;
+        txHash = await provider.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: currentEthWallet,
+            to: selectedToken.address,
+            data: data,
+          }]
+        });
+      }
 
-      const tipMsg = `💸 Sent a tip of ${tipAmount} ETH\nHash: ${txHash.slice(0, 10)}...`;
+      const tipMsg = `💸 Sent ${tipAmount} ${selectedToken.symbol}\nHash: ${txHash.slice(0, 10)}...`;
       await handleSendMessage(tipMsg);
-
+      
       setSendingTip(false);
       setShowTipModal(false);
       setTipAmount('');
-      Alert.alert('Success', `Successfully tipped ${tipAmount} ETH to ${name}!`);
+      Alert.alert('Success', `Successfully tipped ${tipAmount} ${selectedToken.symbol} to ${name}!`);
     } catch (e: any) {
       console.error('EVM Tipping error:', e);
       setSendingTip(false);
@@ -458,7 +559,29 @@ export default function ChatDetailScreen() {
                 </View>
               </View>
 
-              <Text style={styles.inputLabel}>Amount ({tipChain === 'solana' ? 'SOL' : 'ETH'})</Text>
+              <Text style={styles.inputLabel}>Token & Amount</Text>
+              
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tokenList}>
+                {fetchingBalances ? (
+                  <ActivityIndicator size="small" color={Theme.colors.primary} />
+                ) : (
+                  availableTokens.map((t, i) => (
+                    <TouchableOpacity 
+                      key={i} 
+                      style={[styles.tokenPill, selectedToken?.symbol === t.symbol && styles.tokenPillActive]}
+                      onPress={() => setSelectedToken(t)}
+                    >
+                      <Text style={[styles.tokenPillText, selectedToken?.symbol === t.symbol && styles.tokenPillTextActive]}>
+                        {t.symbol}
+                      </Text>
+                      <Text style={[styles.tokenBalance, selectedToken?.symbol === t.symbol && styles.tokenBalanceActive]}>
+                        {t.balance}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+
               <TextInput
                 style={styles.tipInput}
                 placeholder="0.00"
@@ -774,6 +897,41 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E7EB',
     paddingVertical: 8,
     textAlign: 'center',
+    marginTop: 10,
+  },
+  tokenList: {
+    flexDirection: 'row',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  tokenPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    marginRight: 10,
+    alignItems: 'center',
+    minWidth: 80,
+  },
+  tokenPillActive: {
+    backgroundColor: '#4F46E5',
+  },
+  tokenPillText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  tokenPillTextActive: {
+    color: '#FFFFFF',
+  },
+  tokenBalance: {
+    fontSize: 10,
+    color: '#6B7280',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  tokenBalanceActive: {
+    color: 'rgba(255,255,255,0.8)',
   },
   walletStatus: {
     flexDirection: 'row',
