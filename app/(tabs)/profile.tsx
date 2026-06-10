@@ -123,8 +123,9 @@ export default function ProfileScreen() {
         setEditRate(formattedProfile.hourly_rate ? String(formattedProfile.hourly_rate) : '');
       } else if (own) {
         // Create initial profile if it doesn't exist for the logged in user
-        const solanaWallet = user.linkedAccounts.find(a => (a as any).chainType === 'solana');
-        const ethereumWallet = user.linkedAccounts.find(a => (a as any).chainType === 'ethereum');
+        const accounts = user.linkedAccounts || [];
+        const solanaWallet = accounts.find(a => (a as any).chainType === 'solana');
+        const ethereumWallet = accounts.find(a => (a as any).chainType === 'ethereum');
 
         const newProfile = {
           id: currentId,
@@ -134,8 +135,8 @@ export default function ProfileScreen() {
           work_experience: [],
           education: [],
           certifications: [],
-          solana_address: solanaWallet?.address || null,
-          ethereum_address: ethereumWallet?.address || null,
+          solana_address: (solanaWallet as any)?.address || null,
+          ethereum_address: (ethereumWallet as any)?.address || null,
         };
         
         const { error: insertError } = await supabase.from('profile').insert(newProfile);
