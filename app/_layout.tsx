@@ -12,25 +12,36 @@ function AuthStateListener() {
 
   useEffect(() => {
     const isUserLoggedIn = !!user;
+    const inAuthGroup = segments[0] === "(auth)";
+    const inTabsGroup = segments[0] === "(tabs)";
+    const atRoot = segments.length === 0;
     
     console.log('[AuthStateListener] DEBUG:', { 
       isReady, 
       isUserLoggedIn,
+      inAuthGroup,
+      inTabsGroup,
+      atRoot,
       userId: user?.id,
-      error: error?.message || null,
       segments 
     });
 
     if (!isReady) return;
 
-    const inAuthGroup = segments[0] === "(auth)";
-
-    if (isUserLoggedIn && inAuthGroup) {
-      router.replace("/(tabs)");
-    } else if (!isUserLoggedIn && !inAuthGroup) {
-      router.replace("/(auth)/login");
+    if (isUserLoggedIn) {
+      // If logged in and NOT in the tabs area (or at root), redirect to tabs
+      if (!inTabsGroup) {
+        console.log('[AuthStateListener] Redirecting to (tabs)');
+        router.replace("/(tabs)");
+      }
+    } else {
+      // If NOT logged in and NOT in the auth area (or at root), redirect to login
+      if (!inAuthGroup) {
+        console.log('[AuthStateListener] Redirecting to (auth)/login');
+        router.replace("/(auth)/login");
+      }
     }
-  }, [user, isReady, segments, error]);
+  }, [user, isReady, segments]);
 
   if (!isReady) {
     return (
