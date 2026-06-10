@@ -11,37 +11,64 @@ function AuthStateListener() {
   const { user, isReady, error, logout } = usePrivy();
 
   useEffect(() => {
+    const isUserLoggedIn = !!user;
+    
+    console.log('[AuthStateListener] DEBUG:', { 
+      isReady, 
+      isUserLoggedIn,
+      userId: user?.id,
+      error: error?.message || null,
+      segments 
+    });
+
     if (!isReady) return;
 
     const inAuthGroup = segments[0] === "(auth)";
-    const inTabsGroup = segments[0] === "(tabs)";
-    const isUserLoggedIn = !!user;
 
-    console.log('[AuthStateListener] Nav Logic:', { isUserLoggedIn, inAuthGroup, inTabsGroup, segments });
-
-    // Use a small delay to ensure the router state is synchronized
-    const timeout = setTimeout(() => {
-      if (isUserLoggedIn) {
-        if (!inTabsGroup) {
-          console.log('[AuthStateListener] Redirecting logged-in user to (tabs)');
-          router.replace("/(tabs)");
-        }
-      } else {
-        if (!inAuthGroup) {
-          console.log('[AuthStateListener] Redirecting guest to (auth)/login');
-          router.replace("/(auth)/login");
-        }
-      }
-    }, 10);
-
-    return () => clearTimeout(timeout);
-  }, [user, isReady, segments]);
+    if (isUserLoggedIn && inAuthGroup) {
+      router.replace("/(tabs)");
+    } else if (!isUserLoggedIn && !inAuthGroup) {
+      router.replace("/(auth)/login");
+    }
+  }, [user, isReady, segments, error]);
 
   if (!isReady) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Theme.colors.background }}>
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Theme.colors.background, padding: 32 }}>
         <ActivityIndicator size="large" color={Theme.colors.primary} />
-        <Text style={{ marginTop: 16, color: Theme.colors.textMuted, fontWeight: '600' }}>Initializing SkillChain...</Text>
+        <Text style={{ marginTop: 24, color: Theme.colors.text, fontWeight: '800', fontSize: 20 }}>Syncing Identity</Text>
+        <Text style={{ marginTop: 8, color: Theme.colors.textMuted, textAlign: 'center', lineHeight: 20 }}>
+          Initializing SkillChain's secure Web3 layer...
+        </Text>
+
+        <View style={{ marginTop: 48, padding: 20, backgroundColor: '#F3F4F6', borderRadius: 16, width: '100%' }}>
+          <Text style={{ color: '#4B5563', fontSize: 12, fontWeight: '700', marginBottom: 8 }}>DEBUG CONSOLE</Text>
+          <Text style={{ color: '#6B7280', fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
+            SDK Ready: {String(isReady)}{"\n"}
+            User Logged In: {String(!!user)}{"\n"}
+            User ID: {user?.id ? `${user.id.substring(0, 12)}...` : 'None'}{"\n"}
+            Segments: {JSON.stringify(segments)}{"\n"}
+            Error: {error ? error.message : 'None'}
+          </Text>
+        </View>
+
+        {!!user && (
+          <TouchableOpacity 
+            onPress={() => router.replace("/(tabs)")}
+            style={{ marginTop: 24, backgroundColor: Theme.colors.primary, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12, width: '100%' }}
+          >
+            <Text style={{ color: '#FFFFFF', textAlign: 'center', fontWeight: '700' }}>Force Enter Dashboard</Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity 
+          onPress={() => logout()}
+          style={{ marginTop: 12, padding: 10 }}
+        >
+          <Text style={{ color: Theme.colors.textMuted, textAlign: 'center', fontSize: 13, fontWeight: '600', textDecorationLine: 'underline' }}>
+            Logout & Clear Session
+          </Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -70,7 +97,11 @@ export default function RootLayout() {
         embeddedWallets: {
           createOnLogin: 'users-without-wallets',
           requireUserPasswordOnCreate: false,
-        }
+        },
+        solanaClusters: [{
+          name: 'mainnet-beta',
+          endpoint: 'https://api.mainnet-beta.solana.com'
+        }],
       }}
     >
       <StatusBar style="light" />
