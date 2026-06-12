@@ -54,6 +54,17 @@ export default function LoginScreen() {
     }
   });
 
+  const handleGoogleLogin = async () => {
+    try {
+      await loginWithGoogle({ 
+        provider: 'google',
+        redirectUrl: 'skillchain://privy' 
+      });
+    } catch (e: any) {
+      Alert.alert('Login Error', e.message);
+    }
+  };
+
   const handleAuth = async () => {
     if (!email) {
       Alert.alert('Error', 'Please enter your email.');
@@ -146,7 +157,7 @@ export default function LoginScreen() {
 
                 <TouchableOpacity 
                   style={styles.socialButton}
-                  onPress={() => loginWithGoogle({ provider: 'google' })}
+                  onPress={handleGoogleLogin}
                   disabled={loading}
                 >
                   <Ionicons name="logo-google" size={20} color="#1F2937" />
@@ -310,5 +321,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-
