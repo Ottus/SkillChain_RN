@@ -57,8 +57,7 @@ export default function LoginScreen() {
   const handleGoogleLogin = async () => {
     try {
       await loginWithGoogle({ 
-        provider: 'google',
-        redirectUrl: 'skillchain://privy' 
+        provider: 'google'
       });
     } catch (e: any) {
       Alert.alert('Login Error', e.message);

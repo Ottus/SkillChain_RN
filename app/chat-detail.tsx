@@ -162,69 +162,82 @@ export default function ChatDetailScreen() {
     if (showTipModal) fetchBalances();
   }, [showTipModal, fetchBalances]);
 
-  const setupChat = useCallback(async () => {
-    if (!userId || !user) return;
-    setLoading(true);
-    try {
-      // Fetch receiver's wallet addresses
-      const { data: receiverData } = await supabase
-        .from('profile')
-        .select('solana_address, ethereum_address')
-        .eq('id', userId)
-        .single();
-      
-      if (receiverData) {
-        setReceiverSolWallet(receiverData.solana_address);
-        setReceiverEthWallet(receiverData.ethereum_address);
-      }
-
-      // Fetch message history
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${user.id})`)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      setMessages(data || []);
-
-      // Subscribe to real-time message changes
-      const channel = supabase
-        .channel(`chat-room-${user.id}-${userId}`)
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'messages' },
-          (payload) => {
-            const newMsg = payload.new as Message;
-            if (
-              (newMsg.sender_id === user.id && newMsg.receiver_id === userId) ||
-              (newMsg.sender_id === userId && newMsg.receiver_id === user.id)
-            ) {
-              setMessages(prev => {
-                if (prev.some(m => m.id === newMsg.id)) return prev;
-                return [...prev, newMsg];
-              });
-              setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-            }
-          }
-        )
-        .subscribe();
-
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 200);
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    } catch (e: any) {
-      console.error('Chat setup error:', e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId, user]);
-
   useEffect(() => {
+    if (!userId || !user) return;
+
+    let active = true;
+    let channel: any = null;
+
+    const setupChat = async () => {
+      setLoading(true);
+      try {
+        // Fetch receiver's wallet addresses
+        const { data: receiverData } = await supabase
+          .from('profile')
+          .select('solana_address, ethereum_address')
+          .eq('id', userId)
+          .single();
+        
+        if (!active) return;
+
+        if (receiverData) {
+          setReceiverSolWallet(receiverData.solana_address);
+          setReceiverEthWallet(receiverData.ethereum_address);
+        }
+
+        // Fetch message history
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .or(`and(sender_id.eq.${user.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${user.id})`)
+          .order('created_at', { ascending: true });
+
+        if (error) throw error;
+        if (!active) return;
+
+        setMessages(data || []);
+
+        // Subscribe to real-time message changes
+        channel = supabase
+          .channel(`chat-room-${user.id}-${userId}`)
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'messages' },
+            (payload) => {
+              const newMsg = payload.new as Message;
+              if (
+                (newMsg.sender_id === user.id && newMsg.receiver_id === userId) ||
+                (newMsg.sender_id === userId && newMsg.receiver_id === user.id)
+              ) {
+                setMessages(prev => {
+                  if (prev.some(m => m.id === newMsg.id)) return prev;
+                  return [...prev, newMsg];
+                });
+                setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+              }
+            }
+          )
+          .subscribe();
+
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 200);
+      } catch (e: any) {
+        console.error('Chat setup error:', e.message);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
     setupChat();
-  }, [setupChat]);
+
+    return () => {
+      active = false;
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [userId, user]);
 
   const handleSendMessage = async (customContent?: string) => {
     const content = customContent || inputText.trim();
