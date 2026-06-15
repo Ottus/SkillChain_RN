@@ -31,7 +31,7 @@ import {
   getAssociatedTokenAddress, 
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
-import { usePrivy, useWallets } from '@privy-io/expo';
+import { usePrivy } from '@privy-io/expo';
 
 const COMMON_EVM_TOKENS = [
   { symbol: 'ETH', name: 'Ethereum', address: 'native', decimals: 18 },

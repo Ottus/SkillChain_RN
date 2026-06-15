@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
+import { usePrivy } from '@privy-io/expo';
 
 interface Job {
   id: string;
@@ -34,6 +35,7 @@ interface Job {
 
 export default function JobsScreen() {
   const router = useRouter();
+  const { user } = usePrivy();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -164,8 +166,22 @@ export default function JobsScreen() {
                 >
                   <Text style={styles.applyBtnText}>Apply</Text>
                 </TouchableOpacity>
-              </View>
-            </Animated.View>
+
+                {/* CHAT WITH EMPLOYER */}
+                {job.user_id !== user?.id && (
+                  <TouchableOpacity 
+                    style={[styles.applyBtn, { backgroundColor: '#F3F4F6', marginLeft: 8 }]}
+                    onPress={() => router.push({
+                      pathname: '/chat-detail',
+                      params: { userId: job.user_id, name: job.profile?.full_name || 'Employer' }
+                    })}
+                  >
+                    <Text style={[styles.applyBtnText, { color: '#111827' }]}>Chat</Text>
+                  </TouchableOpacity>
+                )}
+                </View>
+                </Animated.View>
+
           ))}
         </ScrollView>
       )}

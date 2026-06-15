@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Theme } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
 import * as ImagePicker from 'expo-image-picker';
@@ -51,6 +52,7 @@ interface Comment {
 }
 
 export default function HomeFeedScreen() {
+  const router = useRouter();
   const { user } = usePrivy();
   // Feed states
   const [posts, setPosts] = useState<Post[]>([]);
@@ -443,6 +445,20 @@ export default function HomeFeedScreen() {
                         {postComments.length} {postComments.length === 1 ? 'Comment' : 'Comments'}
                       </Text>
                     </TouchableOpacity>
+
+                    {/* NEW MESSAGE ACTION */}
+                    {post.user_id !== user?.id && (
+                      <TouchableOpacity 
+                        style={styles.actionItem}
+                        onPress={() => router.push({
+                          pathname: '/chat-detail',
+                          params: { userId: post.user_id, name: post.profile?.full_name || 'User' }
+                        })}
+                      >
+                        <Ionicons name="chatbubbles-outline" size={20} color="#4B5563" />
+                        <Text style={styles.actionText}>Message</Text>
+                      </TouchableOpacity>
+                    )}
 
                     <View style={styles.shareContainer}>
                       <TouchableOpacity 

@@ -33,12 +33,11 @@ export default function ChatScreen() {
     try {
       console.log('[ChatScreen] Fetching threads for DID:', user.id);
       // 1. Fetch messages involving the user
-      // NOTE: If this fails with 'invalid input syntax for type uuid', 
-      // the 'sender_id' and 'receiver_id' columns in Supabase must be changed from UUID to TEXT.
+      // We use explicit filters to handle IDs with special characters (like colons in DIDs)
       const { data: messages, error: msgError } = await supabase
         .from('messages')
         .select('*')
-        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .or('sender_id.eq.' + user.id + ',receiver_id.eq.' + user.id)
         .order('created_at', { ascending: false });
 
       if (msgError) throw msgError;

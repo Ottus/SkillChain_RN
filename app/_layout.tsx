@@ -9,7 +9,7 @@ import { PrivyProvider, usePrivy } from '@privy-io/expo';
 function AuthStateListener() {
   const router = useRouter();
   const segments = useSegments();
-  const { user, isReady, error, logout } = usePrivy();
+  const { user, isReady, error, logout, createWallet } = usePrivy();
 
   useEffect(() => {
     const isUserLoggedIn = !!user;
@@ -26,6 +26,23 @@ function AuthStateListener() {
     });
 
     if (!isReady) return;
+
+    // AUTO-CREATE WALLETS LOGIC
+    // Privy docs state auto-creation doesn't work for direct login (loginWithCode)
+    // So we handle it here manually once the user is ready
+    if (isUserLoggedIn && user.linkedAccounts) {
+      const hasSolana = user.linkedAccounts.some(a => (a as any).chainType === 'solana');
+      const hasEthereum = user.linkedAccounts.some(a => (a as any).chainType === 'ethereum');
+
+      if (!hasSolana) {
+        console.log('[AuthStateListener] Auto-creating Solana wallet...');
+        createWallet({ chainType: 'solana' }).catch(e => console.warn('Auto-wallet (SOL) failed:', e));
+      }
+      if (!hasEthereum) {
+        console.log('[AuthStateListener] Auto-creating Ethereum wallet...');
+        createWallet({ chainType: 'ethereum' }).catch(e => console.warn('Auto-wallet (ETH) failed:', e));
+      }
+    }
 
     if (isUserLoggedIn) {
       if (atRoot || inAuthGroup) {
@@ -84,6 +101,10 @@ export default function RootLayout() {
   const appId = process.env.EXPO_PUBLIC_PRIVY_APP_ID || process.env.APP_ID || "";
   const clientId = process.env.EXPO_PUBLIC_PRIVY_CLIENT_ID || process.env.CLIENT_ID || "";
 
+  if (!appId || !clientId) {
+    console.error('[RootLayout] Privy App ID or Client ID is MISSING from .env');
+  }
+
   console.log('[RootLayout] Initializing with:', { 
     appId: appId ? `${appId.substring(0, 5)}...` : 'MISSING', 
     clientId: clientId ? `${clientId.substring(0, 10)}...` : 'MISSING' 
@@ -99,7 +120,12 @@ export default function RootLayout() {
           accentColor: Theme.colors.primary,
         },
         embeddedWallets: {
-          createOnLogin: 'users-without-wallets',
+          ethereum: {
+            createOnLogin: 'users-without-wallets',
+          },
+          solana: {
+            createOnLogin: 'users-without-wallets',
+          },
           requireUserPasswordOnCreate: false,
         },
         solanaClusters: [{

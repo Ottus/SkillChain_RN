@@ -9,7 +9,7 @@ import { useLoginWithEmail, usePrivy } from '@privy-io/expo';
 
 export default function SignupScreen() {
   const router = useRouter();
-  const { authenticated, ready } = usePrivy();
+  const { authenticated, isReady, user } = usePrivy();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -17,15 +17,33 @@ export default function SignupScreen() {
   const [isCodeSent, setIsCodeSent] = useState(false);
 
   // If already authenticated, redirecting happens in _layout, but we show loading here
-  if (ready && authenticated) {
+  if (isReady && authenticated) {
     return (
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Theme.colors.primary} />
+          <Text style={{ marginTop: 16, color: '#6B7280' }}>Signing you in...</Text>
+
+          <View style={{ marginTop: 40, padding: 20, backgroundColor: '#F3F4F6', borderRadius: 16, width: '100%' }}>
+            <Text style={{ color: '#4B5563', fontSize: 12, fontWeight: '700', marginBottom: 8 }}>DEBUG CONSOLE (SIGNUP)</Text>
+            <Text style={{ color: '#6B7280', fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
+              SDK Ready: true{"\n"}
+              User ID: {user?.id ? `${user.id.substring(0, 15)}...` : 'Loading...'}{"\n"}
+              Status: Authenticated
+            </Text>
+          </View>
+
+          <TouchableOpacity 
+            onPress={() => router.replace("/(tabs)")}
+            style={{ marginTop: 24, backgroundColor: Theme.colors.primary, paddingHorizontal: 24, paddingVertical: 16, borderRadius: 12, width: '100%' }}
+          >
+            <Text style={{ color: '#FFFFFF', textAlign: 'center', fontWeight: '700' }}>Manual Enter Dashboard</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
   }
+
 
   const { sendCode, loginWithCode } = useLoginWithEmail({
     onSendCodeSuccess: () => {

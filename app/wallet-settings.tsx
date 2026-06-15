@@ -50,6 +50,8 @@ export default function WalletSettingsScreen() {
 
   const handleConnectExternalSolana = async () => {
     if (!user) return;
+    console.log('[WalletSettings] Starting external Solana connection (MWA)');
+    
     if (Platform.OS === 'web') {
       Alert.alert('Web Wallet', 'Please use a browser extension like Phantom on web.');
       return;
@@ -58,6 +60,7 @@ export default function WalletSettingsScreen() {
     setLoading(true);
     try {
       const result = await transact(async (wallet) => {
+        console.log('[WalletSettings] Requesting authorization from mobile wallet...');
         return await wallet.authorize({
           cluster: 'mainnet-beta',
           identity: APP_IDENTITY,
@@ -65,19 +68,23 @@ export default function WalletSettingsScreen() {
       });
 
       const publicKey = result.accounts[0].address;
+      console.log('[WalletSettings] Received Public Key:', publicKey);
 
       const { error } = await supabase
         .from('profile')
         .update({ solana_address: publicKey })
         .eq('id', user.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('[WalletSettings] Supabase Update Error:', error);
+        throw error;
+      }
 
       setExternalSolana(publicKey);
-      Alert.alert('Wallet Connected', 'Successfully linked external Solana wallet.');
+      Alert.alert('Success', 'External Solana wallet linked to your SkillChain profile!');
     } catch (e: any) {
-      console.error('External wallet error:', e);
-      Alert.alert('Connection Error', e.message || 'Could not connect to external wallet.');
+      console.error('[WalletSettings] External wallet error:', e);
+      Alert.alert('Connection Failed', e.message || 'Could not connect to external wallet. Ensure Phantom or Solflare is installed.');
     } finally {
       setLoading(false);
     }
