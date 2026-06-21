@@ -9,7 +9,8 @@ import { useLoginWithEmail, useLoginWithOAuth, usePrivy } from '@privy-io/expo';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { authenticated, isReady, user } = usePrivy();
+  const { isReady, user } = usePrivy();
+  const authenticated = !!user;
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,6 +18,9 @@ export default function LoginScreen() {
 
   // If already authenticated, redirecting is handled by _layout
   if (isReady && authenticated) {
+    const emailAccount = user?.linked_accounts?.find(acc => acc.type === 'email');
+    const emailAddress = emailAccount?.address || 'Wallet User';
+
     return (
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -28,7 +32,7 @@ export default function LoginScreen() {
             <Text style={{ color: '#6B7280', fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
               SDK Ready: true{"\n"}
               User ID: {user?.id ? `${user.id.substring(0, 15)}...` : 'Loading...'}{"\n"}
-              Identity: {user?.email?.address || 'Wallet User'}
+              Identity: {emailAddress}
             </Text>
           </View>
 

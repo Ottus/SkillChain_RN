@@ -9,7 +9,8 @@ import { useLoginWithEmail, usePrivy } from '@privy-io/expo';
 
 export default function SignupScreen() {
   const router = useRouter();
-  const { authenticated, isReady, user } = usePrivy();
+  const { isReady, user } = usePrivy();
+  const authenticated = !!user;
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');

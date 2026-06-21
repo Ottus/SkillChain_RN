@@ -6,14 +6,14 @@ import { Theme } from '@/constants/theme';
 
 interface TabBarIconProps {
   focused: boolean;
-  name: keyof typeof Ionicons.mappings | string;
+  name: React.ComponentProps<typeof Ionicons>['name'];
 }
 
 function TabIcon({ focused, name }: TabBarIconProps) {
   return (
     <View style={focused ? styles.activePill : styles.inactiveIconContainer}>
       <Ionicons
-        name={(focused ? name.replace('-outline', '') : name) as any}
+        name={(focused ? (name as string).replace('-outline', '') : name) as any}
         size={22}
         color={focused ? '#1F2937' : '#4B5563'}
       />

@@ -51,7 +51,7 @@ export default function DiscoverScreen() {
   const handleCardPress = (profile: Profile) => {
     // Navigate to profile page passing selected user ID
     router.push({
-      pathname: '/(tabs)/profile',
+      pathname: '/settings',
       params: { userId: profile.id }
     });
   };
@@ -365,6 +365,11 @@ const styles = StyleSheet.create({
   },
   rateContainer: {
     alignItems: 'flex-end',
+  },
+  rateText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
   },
   rateSubtext: {
     fontSize: 10,

@@ -13,7 +13,7 @@ import {
   Modal
 } from 'react-native';
 import { Theme } from '@/constants/theme';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
@@ -85,13 +85,13 @@ export default function ChatDetailScreen() {
   const [fetchingBalances, setFetchingBalances] = useState(false);
 
   // Identify Wallets from linkedAccounts
-  const wallets = user?.linkedAccounts || [];
-  const embeddedSolana = wallets.find(w => (w as any).walletClientType === 'privy' && (w as any).chainType === 'solana');
-  const externalSolana = wallets.find(w => (w as any).walletClientType !== 'privy' && (w as any).chainType === 'solana');
+  const wallets = user?.linked_accounts || [];
+  const embeddedSolana = wallets.find((w: any) => w.wallet_client_type === 'privy' && w.chain_type === 'solana');
+  const externalSolana = wallets.find((w: any) => w.wallet_client_type !== 'privy' && w.chain_type === 'solana');
   const currentSolWallet = (embeddedSolana as any)?.address || (externalSolana as any)?.address;
 
-  const embeddedEthereum = wallets.find(w => (w as any).walletClientType === 'privy' && (w as any).chainType === 'ethereum');
-  const externalEthereum = wallets.find(w => (w as any).walletClientType !== 'privy' && (w as any).chainType === 'ethereum');
+  const embeddedEthereum = wallets.find((w: any) => w.wallet_client_type === 'privy' && w.chain_type === 'ethereum');
+  const externalEthereum = wallets.find((w: any) => w.wallet_client_type !== 'privy' && w.chain_type === 'ethereum');
   const currentEthWallet = (embeddedEthereum as any)?.address || (externalEthereum as any)?.address;
 
   const currentUserWallet = tipChain === 'solana' ? currentSolWallet : currentEthWallet;
@@ -371,8 +371,9 @@ export default function ChatDetailScreen() {
         const { blockhash } = await connection.getLatestBlockhash();
         transaction.recentBlockhash = blockhash;
         transaction.feePayer = senderPublicKey;
-        const sigs = await wallet.signAndSendTransactions({ transactions: [transaction] });
-        return sigs[0];
+        const base64Transaction = transaction.serialize({ requireAllSignatures: false }).toString('base64');
+        const sigs = await wallet.signAndSendTransactions({ payloads: [base64Transaction] });
+        return sigs.signatures[0];
       });
     }
   };
@@ -555,7 +556,7 @@ export default function ChatDetailScreen() {
                   style={[styles.chainToggle, tipChain === 'ethereum' && styles.chainToggleActive]}
                   onPress={() => setTipChain('ethereum')}
                 >
-                  <Ionicons name="logo-ethereum" size={16} color={tipChain === 'ethereum' ? '#FFFFFF' : '#6B7280'} />
+                  <FontAwesome5 name="ethereum" size={16} color={tipChain === 'ethereum' ? '#FFFFFF' : '#6B7280'} />
                   <Text style={[styles.chainToggleText, tipChain === 'ethereum' && styles.chainToggleTextActive]}>Ethereum</Text>
                 </TouchableOpacity>
               </View>

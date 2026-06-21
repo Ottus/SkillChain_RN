@@ -4,17 +4,19 @@ import { StatusBar } from "expo-status-bar";
 import { Theme } from "@/constants/theme";
 import { View, ActivityIndicator, Text, TouchableOpacity, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { PrivyProvider, usePrivy } from '@privy-io/expo';
+import { PrivyProvider, usePrivy, useEmbeddedSolanaWallet, useEmbeddedEthereumWallet } from '@privy-io/expo';
 
 function AuthStateListener() {
   const router = useRouter();
   const segments = useSegments();
-  const { user, isReady, error, logout, createWallet } = usePrivy();
+  const { user, isReady, error, logout } = usePrivy();
+  const solanaWallet = useEmbeddedSolanaWallet();
+  const ethereumWallet = useEmbeddedEthereumWallet();
 
   useEffect(() => {
     const isUserLoggedIn = !!user;
     const inAuthGroup = segments[0] === "(auth)";
-    const atRoot = segments.length === 0;
+    const atRoot = (segments as string[]).length === 0;
     
     console.log('[AuthStateListener] Nav Logic:', { 
       isReady, 
@@ -29,18 +31,31 @@ function AuthStateListener() {
 
     // AUTO-CREATE WALLETS LOGIC
     // Privy docs state auto-creation doesn't work for direct login (loginWithCode)
-    // So we handle it here manually once the user is ready
-    if (isUserLoggedIn && user.linkedAccounts) {
-      const hasSolana = user.linkedAccounts.some(a => (a as any).chainType === 'solana');
-      const hasEthereum = user.linkedAccounts.some(a => (a as any).chainType === 'ethereum');
+    if (isUserLoggedIn) {
+      const accounts = user.linked_accounts || [];
+      const hasSolana = accounts.some((a: any) => a.chain_type === 'solana' && a.wallet_client_type === 'privy');
+      const hasEthereum = accounts.some((a: any) => a.chain_type === 'ethereum' && a.wallet_client_type === 'privy');
 
       if (!hasSolana) {
         console.log('[AuthStateListener] Auto-creating Solana wallet...');
-        createWallet({ chainType: 'solana' }).catch(e => console.warn('Auto-wallet (SOL) failed:', e));
+        solanaWallet.create!()
+          .then(() => console.log('[AuthStateListener] Solana wallet created successfully'))
+          .catch((e: any) => {
+            if (!e.message.includes('already exists')) {
+              console.warn('Auto-wallet (SOL) failed:', e.message);
+            }
+          });
       }
+      
       if (!hasEthereum) {
         console.log('[AuthStateListener] Auto-creating Ethereum wallet...');
-        createWallet({ chainType: 'ethereum' }).catch(e => console.warn('Auto-wallet (ETH) failed:', e));
+        ethereumWallet.create()
+          .then(() => console.log('[AuthStateListener] Ethereum wallet created successfully'))
+          .catch((e: any) => {
+            if (!e.message.includes('already exists')) {
+              console.warn('Auto-wallet (ETH) failed:', e.message);
+            }
+          });
       }
     }
 
@@ -115,23 +130,14 @@ export default function RootLayout() {
       appId={appId}
       clientId={clientId}
       config={{
-        appearance: {
-          theme: 'light',
-          accentColor: Theme.colors.primary,
-        },
-        embeddedWallets: {
+        embedded: {
           ethereum: {
             createOnLogin: 'users-without-wallets',
           },
           solana: {
             createOnLogin: 'users-without-wallets',
           },
-          requireUserPasswordOnCreate: false,
         },
-        solanaClusters: [{
-          name: 'mainnet-beta',
-          endpoint: 'https://api.mainnet-beta.solana.com'
-        }],
       }}
     >
       <StatusBar style="light" />

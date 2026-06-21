@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView } from 'react-native';
 import { Theme } from '@/constants/theme';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
 import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol';
@@ -22,9 +22,9 @@ export default function WalletSettingsScreen() {
   const [checking, setChecking] = useState(true);
 
   // Identify Wallets from linkedAccounts
-  const wallets = user?.linkedAccounts || [];
-  const embeddedSolana = wallets.find(w => (w as any).walletClientType === 'privy' && (w as any).chainType === 'solana');
-  const embeddedEthereum = wallets.find(w => (w as any).walletClientType === 'privy' && (w as any).chainType === 'ethereum');
+  const wallets = user?.linked_accounts || [];
+  const embeddedSolana = wallets.find((w: any) => w.wallet_client_type === 'privy' && w.chain_type === 'solana');
+  const embeddedEthereum = wallets.find((w: any) => w.wallet_client_type === 'privy' && w.chain_type === 'ethereum');
 
   useEffect(() => {
     checkExternalWallet();
@@ -148,16 +148,15 @@ export default function WalletSettingsScreen() {
             </View>
             <View style={styles.addressContainer}>
               <Text style={styles.addressText} numberOfLines={1}>
-                {embeddedSolana?.address || 'Generating...'}
+                {(embeddedSolana as any)?.address || 'Generating...'}
               </Text>
             </View>
           </Animated.View>
 
-          {/* Ethereum Embedded */}
           <Animated.View entering={FadeInUp.delay(200)} style={[styles.walletCard, { marginTop: 12 }]}>
             <View style={styles.walletHeader}>
               <View style={[styles.chainIcon, { backgroundColor: '#EEF2FF' }]}>
-                <Ionicons name="logo-ethereum" size={20} color="#6366F1" />
+                <FontAwesome5 name="ethereum" size={20} color="#6366F1" />
               </View>
               <View style={styles.walletMeta}>
                 <Text style={styles.chainName}>Ethereum (EVM)</Text>
@@ -166,7 +165,7 @@ export default function WalletSettingsScreen() {
             </View>
             <View style={styles.addressContainer}>
               <Text style={styles.addressText} numberOfLines={1}>
-                {embeddedEthereum?.address || 'Generating...'}
+                {(embeddedEthereum as any)?.address || 'Generating...'}
               </Text>
             </View>
           </Animated.View>

@@ -19,6 +19,7 @@ import { usePrivy } from '@privy-io/expo';
 
 interface Job {
   id: string;
+  user_id: string;
   title: string;
   description: string;
   salary: number | null;

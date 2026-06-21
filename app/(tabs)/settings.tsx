@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -13,10 +13,10 @@ import {
 } from 'react-native';
 import { Theme } from '@/constants/theme';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
-import { usePrivy } from '@privy-io/expo';
+import { usePrivy, useEmbeddedSolanaWallet, useEmbeddedEthereumWallet } from '@privy-io/expo';
 
 interface WorkExperience {
   role: string;
@@ -51,7 +51,9 @@ interface Profile {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, logout, createWallet } = usePrivy();
+  const { user, logout } = usePrivy();
+  const solanaWallet = useEmbeddedSolanaWallet();
+  const ethereumWallet = useEmbeddedEthereumWallet();
   const params = useLocalSearchParams();
   const targetUserId = params.userId as string | undefined;
 
@@ -59,11 +61,12 @@ export default function SettingsScreen() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   // Identify Wallets from Privy User object
-  const accounts = user?.linkedAccounts || [];
-  const embeddedSolana = accounts.find(a => (a as any).walletClientType === 'privy' && (a as any).chainType === 'solana');
-  const embeddedEthereum = accounts.find(a => (a as any).walletClientType === 'privy' && (a as any).chainType === 'ethereum');
+  const accounts = user?.linked_accounts || [];
+  const embeddedSolana = accounts.find((a: any) => a.wallet_client_type === 'privy' && a.chain_type === 'solana');
+  const embeddedEthereum = accounts.find((a: any) => a.wallet_client_type === 'privy' && a.chain_type === 'ethereum');
 
   // Edit states
   const [isEditing, setIsEditing] = useState(false);
@@ -71,6 +74,40 @@ export default function SettingsScreen() {
   const [editBio, setEditBio] = useState('');
   const [editRate, setEditRate] = useState('');
   const [newSkill, setNewSkill] = useState('');
+
+  const syncWalletsToDatabase = useCallback(async (prof: Profile) => {
+    if (!user || !isOwnProfile || syncing) return;
+    
+    const solAddr = (embeddedSolana as any)?.address;
+    const ethAddr = (embeddedEthereum as any)?.address;
+
+    const needsSolUpdate = solAddr && solAddr !== prof.solana_address;
+    const needsEthUpdate = ethAddr && ethAddr !== prof.ethereum_address;
+
+    if (needsSolUpdate || needsEthUpdate) {
+      setSyncing(true);
+      try {
+        console.log('[Settings] Syncing wallets to database...');
+        await supabase
+          .from('profile')
+          .update({
+            solana_address: solAddr || prof.solana_address,
+            ethereum_address: ethAddr || prof.ethereum_address
+          })
+          .eq('id', user.id);
+        
+        setProfile(prev => prev ? {
+          ...prev,
+          solana_address: solAddr || prof.solana_address,
+          ethereum_address: ethAddr || prof.ethereum_address
+        } : null);
+      } catch (e) {
+        console.error('Wallet sync failed:', e);
+      } finally {
+        setSyncing(false);
+      }
+    }
+  }, [user, embeddedSolana, embeddedEthereum, isOwnProfile, syncing]);
 
   const loadProfileData = useCallback(async () => {
     if (!user) return;
@@ -110,22 +147,21 @@ export default function SettingsScreen() {
         setEditName(formattedProfile.full_name || '');
         setEditBio(formattedProfile.bio || '');
         setEditRate(formattedProfile.hourly_rate ? String(formattedProfile.hourly_rate) : '');
+        
+        if (own) syncWalletsToDatabase(formattedProfile);
       } else if (own) {
-        // Create initial profile if it doesn't exist for the logged in user
-        const accounts = user.linkedAccounts || [];
-        const solWallet = accounts.find(a => (a as any).chainType === 'solana');
-        const ethWallet = accounts.find(a => (a as any).chainType === 'ethereum');
-
+        const emailAccount = user.linked_accounts?.find((acc: any) => acc.type === 'email');
+        const emailAddress = (emailAccount as any)?.address || '';
         const newProfile = {
           id: currentId,
-          email: user.email?.address || '',
-          full_name: user.email?.address?.split('@')[0] || 'SkillChain User',
+          email: emailAddress,
+          full_name: emailAddress.split('@')[0] || 'SkillChain User',
           skills: [],
           work_experience: [],
           education: [],
           certifications: [],
-          solana_address: (solWallet as any)?.address || null,
-          ethereum_address: (ethWallet as any)?.address || null,
+          solana_address: (embeddedSolana as any)?.address || null,
+          ethereum_address: (embeddedEthereum as any)?.address || null,
         };
         
         const { error: insertError } = await supabase.from('profile').insert(newProfile);
@@ -137,7 +173,7 @@ export default function SettingsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [targetUserId, user, embeddedSolana, embeddedEthereum]);
+  }, [targetUserId, user, embeddedSolana, embeddedEthereum, syncWalletsToDatabase]);
 
   useFocusEffect(
     useCallback(() => {
@@ -190,11 +226,19 @@ export default function SettingsScreen() {
 
   const handleCreateEmbeddedWallet = async (chain: 'solana' | 'ethereum') => {
     try {
-      await createWallet({ chainType: chain });
+      if (chain === 'solana') {
+        await solanaWallet.create!();
+      } else {
+        await ethereumWallet.create();
+      }
       Alert.alert('Success', `Embedded ${chain} wallet created!`);
       loadProfileData();
     } catch (e: any) {
-      Alert.alert('Wallet Error', e.message || 'Failed to create wallet.');
+      if (e.message.includes('already exists')) {
+        Alert.alert('Wallet Exists', 'Your wallet is already created.');
+      } else {
+        Alert.alert('Wallet Error', e.message || 'Failed to create wallet.');
+      }
     }
   };
 
@@ -211,7 +255,8 @@ export default function SettingsScreen() {
           <Text style={styles.title}>Settings</Text>
         </View>
 
-        <Text style={styles.sectionTitle}>Account & Profile</Text>
+        {/* ACCOUNT SECTION */}
+        <Text style={styles.sectionTitle}>Account</Text>
         <Animated.View entering={FadeInUp.delay(100)} style={styles.profileCard}>
           <View style={styles.avatar}>
             <Text style={styles.avatarTextBlue}>{(profile?.full_name || 'U').charAt(0).toUpperCase()}</Text>
@@ -220,11 +265,12 @@ export default function SettingsScreen() {
             <Text style={styles.username}>{profile?.full_name || 'Skillchain User'}</Text>
             <Text style={styles.email}>{profile?.email}</Text>
             <TouchableOpacity style={styles.editProfileBtn} onPress={() => setIsEditing(true)}>
-              <Text style={styles.editProfileBtnText}>Edit Profile</Text>
+              <Text style={styles.editProfileBtnText}>Edit Profile Details</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
 
+        {/* WALLET HUB SECTION */}
         <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Wallet Management</Text>
         <View style={styles.walletHub}>
           <View style={styles.walletItem}>
@@ -237,7 +283,7 @@ export default function SettingsScreen() {
             </View>
             {embeddedSolana ? (
               <View style={styles.addressBox}>
-                <Text style={styles.addressValue} numberOfLines={1}>{embeddedSolana.address}</Text>
+                <Text style={styles.addressValue} numberOfLines={1}>{(embeddedSolana as any).address}</Text>
               </View>
             ) : (
               <View style={styles.missingWalletContainer}>
@@ -253,14 +299,14 @@ export default function SettingsScreen() {
           <View style={styles.walletItem}>
             <View style={styles.walletItemHeader}>
               <View style={[styles.chainIcon, { backgroundColor: '#EEF2FF' }]}>
-                <Ionicons name="logo-ethereum" size={18} color="#6366F1" />
+                <FontAwesome5 name="ethereum" size={18} color="#6366F1" />
               </View>
               <Text style={styles.chainLabel}>Ethereum (EVM)</Text>
               <View style={styles.tag}><Text style={styles.tagText}>Embedded</Text></View>
             </View>
             {embeddedEthereum ? (
               <View style={styles.addressBox}>
-                <Text style={styles.addressValue} numberOfLines={1}>{embeddedEthereum.address}</Text>
+                <Text style={styles.addressValue} numberOfLines={1}>{(embeddedEthereum as any).address}</Text>
               </View>
             ) : (
               <View style={styles.missingWalletContainer}>
@@ -278,6 +324,38 @@ export default function SettingsScreen() {
             <Text style={styles.externalWalletLinkText}>Manage External Wallets</Text>
             <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
           </TouchableOpacity>
+        </View>
+
+        {/* PROFESSIONAL PROFILE DETAILS */}
+        <Text style={[styles.sectionTitle, { marginTop: 32 }]}>Professional Profile</Text>
+        
+        <View style={styles.detailSection}>
+          <Text style={styles.detailLabel}>Bio</Text>
+          <Text style={profile?.bio ? styles.detailText : styles.detailTextMuted}>
+            {profile?.bio || 'No bio provided.'}
+          </Text>
+        </View>
+
+        <View style={styles.detailSection}>
+          <Text style={styles.detailLabel}>Hourly Rate</Text>
+          <Text style={styles.detailValue}>
+            {profile?.hourly_rate ? `$${profile.hourly_rate} / hr` : 'Negotiable'}
+          </Text>
+        </View>
+
+        <View style={styles.detailSection}>
+          <Text style={styles.detailLabel}>Skills</Text>
+          <View style={styles.skillsRow}>
+            {profile?.skills && profile.skills.length > 0 ? (
+              profile.skills.map((skill, i) => (
+                <View key={i} style={styles.skillPillMini}>
+                  <Text style={styles.skillTextMini}>{skill}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.detailTextMuted}>No skills added yet.</Text>
+            )}
+          </View>
         </View>
 
         <Text style={[styles.sectionTitle, { marginTop: 32 }]}>App Settings</Text>
@@ -345,30 +423,24 @@ const styles = StyleSheet.create({
   chainLabel: { fontSize: 15, fontWeight: '700', color: '#111827', flex: 1 },
   tag: { backgroundColor: '#F3F4F6', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   tagText: { fontSize: 10, fontWeight: '800', color: '#6B7280' },
-  missingWalletContainer: {
-    backgroundColor: '#F9FAFB',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    alignItems: 'center',
-    gap: 12,
-  },
-  missingWalletText: {
-    fontSize: 13,
-    color: '#6B7280',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
+  missingWalletContainer: { backgroundColor: '#F9FAFB', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', gap: 12 },
+  missingWalletText: { fontSize: 13, color: '#6B7280', textAlign: 'center', fontWeight: '500' },
   addressBox: { backgroundColor: '#F9FAFB', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#F3F4F6' },
   addressValue: { fontSize: 12, color: '#4B5563', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
-  createWalletBtn: { backgroundColor: '#EEF2FF', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  createWalletBtn: { backgroundColor: '#EEF2FF', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, alignItems: 'center', flexDirection: 'row', gap: 8 },
   createWalletBtnText: { fontSize: 14, color: '#4F46E5', fontWeight: '700' },
-  externalWalletLink: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', gap: 12 },
-  externalWalletLinkText: { flex: 1, fontSize: 14, fontWeight: '600' },
+  externalWalletLink: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', gap: 12, marginTop: 8 },
+  externalWalletLinkText: { flex: 1, fontSize: 14, fontWeight: '600', color: '#111827' },
+  detailSection: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB' },
+  detailLabel: { fontSize: 12, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 6, letterSpacing: 0.5 },
+  detailText: { fontSize: 15, color: '#111827', lineHeight: 22, fontWeight: '500' },
+  detailTextMuted: { fontSize: 14, color: '#9CA3AF', fontStyle: 'italic' },
+  detailValue: { fontSize: 18, fontWeight: '700', color: '#111827' },
+  skillPillMini: { backgroundColor: '#EEF2FF', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: '#DCE4F9', marginRight: 8, marginBottom: 8 },
+  skillTextMini: { fontSize: 11, fontWeight: '700', color: '#4F46E5' },
   actionsList: { backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden' },
   actionItemRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  actionItemText: { flex: 1, fontSize: 15, fontWeight: '600' },
+  actionItemText: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
   modalHeaderFixed: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   modalTitleInline: { fontSize: 18, fontWeight: '800' },
   saveBtnText: { fontSize: 16, color: '#4F46E5', fontWeight: '800' },
@@ -377,7 +449,7 @@ const styles = StyleSheet.create({
   addSkillRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 },
   skillInput: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 10, padding: 12 },
   addSkillBtn: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center' },
-  skillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  skillPill: { backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  skillsRow: { flexDirection: 'row', flexWrap: 'wrap' },
+  skillPill: { backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 8, marginBottom: 8 },
   skillText: { fontSize: 12, fontWeight: '700' }
 });
