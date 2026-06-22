@@ -478,6 +478,7 @@ export default function HomeFeedScreen() {
 
                   {/* Post Actions */}
                   <View style={styles.postActions}>
+                    {/* Like button commented out temporarily
                     <TouchableOpacity 
                       style={styles.actionItem}
                       onPress={() => handleLikeToggle(post)}
@@ -491,6 +492,7 @@ export default function HomeFeedScreen() {
                         {postLikes.length} {postLikes.length === 1 ? 'Like' : 'Likes'}
                       </Text>
                     </TouchableOpacity>
+                    */}
 
                     <TouchableOpacity 
                       style={styles.actionItem}
