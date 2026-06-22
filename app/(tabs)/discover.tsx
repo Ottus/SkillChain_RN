@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TextInput, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Theme } from '@/constants/Theme';
-import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInUp } from 'react-native-reanimated';
-import { supabase } from '@/constants/Supabase';
-import { useRouter } from 'expo-router';
 import { Cache } from '@/constants/Cache';
+import { supabase } from '@/constants/Supabase';
+import { Theme } from '@/constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { usePrivy } from '@privy-io/expo';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 
 interface Profile {
   id: string;
@@ -19,6 +20,7 @@ interface Profile {
 
 export default function DiscoverScreen() {
   const router = useRouter();
+  const { user } = usePrivy();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,7 +62,7 @@ export default function DiscoverScreen() {
   const handleCardPress = (profile: Profile) => {
     // Navigate to profile page passing selected user ID
     router.push({
-      pathname: '/(tabs)/profile',
+      pathname: '/settings',
       params: { userId: profile.id }
     });
   };
@@ -185,6 +187,20 @@ export default function DiscoverScreen() {
                       {profile.hourly_rate ? <Text style={styles.rateSubtext}>/ HOUR</Text> : null}
                     </View>
                   </TouchableOpacity>
+
+                  {/* MESSAGE ACTION */}
+                  {profile.id !== user?.id && (
+                    <TouchableOpacity 
+                      style={styles.messageBtn}
+                      onPress={() => router.push({
+                        pathname: '/chat-detail',
+                        params: { userId: profile.id, name: profile.full_name || 'Developer' }
+                      })}
+                    >
+                      <Ionicons name="chatbubbles-outline" size={18} color="#4F46E5" />
+                      <Text style={styles.messageBtnText}>Message</Text>
+                    </TouchableOpacity>
+                  )}
                 </Animated.View>
               );
             })
@@ -362,8 +378,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   rateText: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#111827',
   },
   rateSubtext: {
@@ -372,4 +388,19 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     marginTop: 2,
   },
-});
+  messageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    gap: 8,
+  },
+  messageBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  });
+

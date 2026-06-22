@@ -1,23 +1,25 @@
 import { Cache } from '@/constants/Cache';
-import { supabase } from '@/constants/Supabase';
-import { Theme } from '@/constants/Theme';
-import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    Linking,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  ScrollView, 
+  TouchableOpacity, 
+  TextInput, 
+  Modal, 
+  Image, 
+  ActivityIndicator, 
+  Alert, 
+  Linking 
 } from 'react-native';
+import { Theme } from '@/constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
+import { supabase } from '@/constants/Supabase';
+import * as ImagePicker from 'expo-image-picker';
+import { usePrivy } from '@privy-io/expo';
 
 interface Post {
   id: string;
@@ -51,12 +53,13 @@ interface Comment {
 }
 
 export default function HomeFeedScreen() {
+  const router = useRouter();
+  const { user } = usePrivy();
   // Feed states
   const [posts, setPosts] = useState<Post[]>([]);
   const [likes, setLikes] = useState<Like[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Interaction states
   const [activeSharePostId, setActiveSharePostId] = useState<string | null>(null);
@@ -71,18 +74,14 @@ export default function HomeFeedScreen() {
   const [submittingPost, setSubmittingPost] = useState(false);
 
   const fetchInitialData = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
-
       await refreshFeed();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to load feed data.');
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchInitialData();
@@ -160,6 +159,7 @@ export default function HomeFeedScreen() {
 
   // Like management
   const handleLikeToggle = async (post: Post) => {
+<<<<<<< HEAD
     if (!currentUserId) {
       console.log('Like failed: No current user ID');
       Alert.alert('Error', 'You must be logged in to like posts');
@@ -168,6 +168,11 @@ export default function HomeFeedScreen() {
 
     const existingLike = likes.find(l => l.post_id === post.id && l.user_id === currentUserId);
     console.log('Like toggle attempt:', { postId: post.id, userId: currentUserId, existingLike: !!existingLike });
+=======
+    if (!user) return;
+
+    const existingLike = likes.find(l => l.post_id === post.id && l.user_id === user.id);
+>>>>>>> origin/bughacker
 
     try {
       if (existingLike) {
@@ -192,7 +197,7 @@ export default function HomeFeedScreen() {
 
         const newLike = {
           post_id: post.id,
-          user_id: currentUserId
+          user_id: user.id
         };
         
         console.log('Inserting like:', newLike);
@@ -214,6 +219,7 @@ export default function HomeFeedScreen() {
           // Replace temp like with real like from database
           setLikes(prev => prev.map(l => l.id === tempLike.id ? data : l));
           
+<<<<<<< HEAD
           // Send notification to author (optional - don't fail if this doesn't work)
           if (post.user_id !== currentUserId) {
             console.log('Sending notification to author:', post.user_id);
@@ -229,6 +235,17 @@ export default function HomeFeedScreen() {
               console.warn('Notification failed (non-critical):', notifError);
               // Don't throw - notification failure shouldn't break the like functionality
             }
+=======
+          // Send notification to author
+          if (post.user_id !== user.id) {
+            await supabase.from('notifications').insert({
+              receiver_id: post.user_id,
+              sender_id: user.id,
+              type: 'like',
+              post_id: post.id,
+              content: 'liked your post'
+            });
+>>>>>>> origin/bughacker
           }
         }
       }
@@ -241,13 +258,13 @@ export default function HomeFeedScreen() {
 
   // Comment management
   const handleAddComment = async (post: Post) => {
-    if (!newCommentText.trim() || !currentUserId) return;
+    if (!newCommentText.trim() || !user) return;
     setSubmittingComment(true);
 
     try {
       const newComment = {
         post_id: post.id,
-        user_id: currentUserId,
+        user_id: user.id,
         content: newCommentText.trim()
       };
 
@@ -273,6 +290,7 @@ export default function HomeFeedScreen() {
         setComments(prev => [...prev, data as any]);
         setNewCommentText('');
         
+<<<<<<< HEAD
         // Notify Author (optional - don't fail if this doesn't work)
         if (post.user_id !== currentUserId) {
           try {
@@ -287,6 +305,17 @@ export default function HomeFeedScreen() {
             console.warn('Notification failed (non-critical):', notifError);
             // Don't throw - notification failure shouldn't break the comment functionality
           }
+=======
+        // Notify Author
+        if (post.user_id !== user.id) {
+          await supabase.from('notifications').insert({
+            receiver_id: post.user_id,
+            sender_id: user.id,
+            type: 'comment',
+            post_id: post.id,
+            content: `commented: "${newCommentText.substring(0, 30)}..."`
+          });
+>>>>>>> origin/bughacker
         }
       }
     } catch (e: any) {
@@ -316,13 +345,14 @@ export default function HomeFeedScreen() {
   };
 
   const uploadImageToStorage = async (uri: string): Promise<string | null> => {
+    if (!user) return null;
     try {
       const response = await fetch(uri);
       const blob = await response.blob();
       const arrayBuffer = await new Response(blob).arrayBuffer();
       
       const fileExt = uri.split('.').pop() || 'jpg';
-      const fileName = `${currentUserId}_${Date.now()}.${fileExt}`;
+      const fileName = `${user.id}_${Date.now()}.${fileExt}`;
       
       const { error } = await supabase.storage
         .from('post-images')
@@ -348,6 +378,7 @@ export default function HomeFeedScreen() {
 
   // Post Submission
   const handlePublishPost = async () => {
+    if (!user) return;
     if (!createContent.trim() && !createImageUri) {
       Alert.alert('Error', 'Post content cannot be empty.');
       return;
@@ -361,7 +392,7 @@ export default function HomeFeedScreen() {
       }
 
       const newPost = {
-        user_id: currentUserId,
+        user_id: user.id,
         content: createContent.trim(),
         image_url: finalImageUrl
       };
@@ -433,9 +464,8 @@ export default function HomeFeedScreen() {
           ) : (
             posts.map((post) => {
               const postLikes = likes.filter(l => l.post_id === post.id);
-              const isLiked = likes.some(l => l.post_id === post.id && l.user_id === currentUserId);
+              const isLiked = likes.some(l => l.post_id === post.id && l.user_id === user?.id);
               const postComments = comments.filter(c => c.post_id === post.id);
-
               return (
                 <Animated.View 
                   key={post.id} 
@@ -501,6 +531,20 @@ export default function HomeFeedScreen() {
                         {postComments.length} {postComments.length === 1 ? 'Comment' : 'Comments'}
                       </Text>
                     </TouchableOpacity>
+
+                    {/* NEW MESSAGE ACTION */}
+                    {post.user_id !== user?.id && (
+                      <TouchableOpacity 
+                        style={styles.actionItem}
+                        onPress={() => router.push({
+                          pathname: '/chat-detail',
+                          params: { userId: post.user_id, name: post.profile?.full_name || 'User' }
+                        })}
+                      >
+                        <Ionicons name="chatbubbles-outline" size={20} color="#4B5563" />
+                        <Text style={styles.actionText}>Message</Text>
+                      </TouchableOpacity>
+                    )}
 
                     <View style={styles.shareContainer}>
                       <TouchableOpacity 

@@ -12,8 +12,8 @@ import {
   Alert,
   Modal
 } from 'react-native';
-import { Theme } from '@/constants/Theme';
-import { Ionicons } from '@expo/vector-icons';
+import { Theme } from '@/constants/theme';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
@@ -26,6 +26,28 @@ import {
   SystemProgram, 
   LAMPORTS_PER_SOL 
 } from '@solana/web3.js';
+import { 
+  createTransferInstruction, 
+  getAssociatedTokenAddress, 
+  TOKEN_PROGRAM_ID,
+} from '@solana/spl-token';
+import { usePrivy } from '@privy-io/expo';
+
+const COMMON_EVM_TOKENS = [
+  { symbol: 'ETH', name: 'Ethereum', address: 'native', decimals: 18 },
+  { symbol: 'USDC', name: 'USD Coin', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6 },
+  { symbol: 'USDT', name: 'Tether', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 },
+];
+
+interface TokenInfo {
+  symbol: string;
+  name: string;
+  mint?: string; // Solana
+  address?: string; // EVM
+  decimals: number;
+  balance: string;
+  isNative?: boolean;
+}
 
 const APP_IDENTITY = {
   name: 'SkillChain',
@@ -43,108 +65,189 @@ interface Message {
 
 export default function ChatDetailScreen() {
   const router = useRouter();
+  const { user } = usePrivy();
   const { userId, name } = useLocalSearchParams();
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   
   // Tipping states
   const [showTipModal, setShowTipModal] = useState(false);
+  const [tipChain, setTipChain] = useState<'solana' | 'ethereum'>('solana');
   const [tipAmount, setTipAmount] = useState('');
   const [sendingTip, setSendingTip] = useState(false);
-  const [receiverWallet, setReceiverWallet] = useState<string | null>(null);
-  const [currentUserWallet, setCurrentUserWallet] = useState<string | null>(null);
+  const [receiverSolWallet, setReceiverSolWallet] = useState<string | null>(null);
+  const [receiverEthWallet, setReceiverEthWallet] = useState<string | null>(null);
+
+  // Token states
+  const [availableTokens, setAvailableTokens] = useState<TokenInfo[]>([]);
+  const [selectedToken, setSelectedToken] = useState<TokenInfo | null>(null);
+  const [fetchingBalances, setFetchingBalances] = useState(false);
+
+  // Identify Wallets from linkedAccounts
+  const wallets = user?.linked_accounts || [];
+  const embeddedSolana = wallets.find((w: any) => w.wallet_client_type === 'privy' && w.chain_type === 'solana');
+  const externalSolana = wallets.find((w: any) => w.wallet_client_type !== 'privy' && w.chain_type === 'solana');
+  const currentSolWallet = (embeddedSolana as any)?.address || (externalSolana as any)?.address;
+
+  const embeddedEthereum = wallets.find((w: any) => w.wallet_client_type === 'privy' && w.chain_type === 'ethereum');
+  const externalEthereum = wallets.find((w: any) => w.wallet_client_type !== 'privy' && w.chain_type === 'ethereum');
+  const currentEthWallet = (embeddedEthereum as any)?.address || (externalEthereum as any)?.address;
+
+  const currentUserWallet = tipChain === 'solana' ? currentSolWallet : currentEthWallet;
+  const receiverWallet = tipChain === 'solana' ? receiverSolWallet : receiverEthWallet;
 
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const setupChat = useCallback(async () => {
-    if (!userId) return;
-    setLoading(true);
+  const fetchBalances = useCallback(async () => {
+    if (!user || !currentUserWallet) return;
+    setFetchingBalances(true);
+    
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      setCurrentUserId(user.id);
+      if (tipChain === 'solana') {
+        const connection = new Connection(clusterApiUrl('mainnet-beta'), 'confirmed');
+        const owner = new PublicKey(currentSolWallet!);
+        
+        // Fetch native SOL
+        const solBalance = await connection.getBalance(owner);
+        const solToken: TokenInfo = {
+          symbol: 'SOL',
+          name: 'Solana',
+          isNative: true,
+          decimals: 9,
+          balance: (solBalance / LAMPORTS_PER_SOL).toFixed(4),
+        };
 
-      // Fetch receiver's wallet address
-      const { data: receiverData } = await supabase
-        .from('profile')
-        .select('solana_address')
-        .eq('id', userId)
-        .single();
-      
-      if (receiverData) {
-        setReceiverWallet(receiverData.solana_address);
+        // Fetch SPL tokens
+        const tokenAccounts = await connection.getParsedTokenAccountsByOwner(owner, {
+          programId: TOKEN_PROGRAM_ID,
+        });
+        
+        const splTokens: TokenInfo[] = tokenAccounts.value.map(acc => {
+          const info = acc.account.data.parsed.info;
+          return {
+            symbol: 'Token', // We'd need an indexer for real symbols
+            name: info.mint.substring(0, 8),
+            mint: info.mint,
+            decimals: info.tokenAmount.decimals,
+            balance: info.tokenAmount.uiAmountString,
+          };
+        }).filter(t => parseFloat(t.balance) > 0);
+
+        const allTokens = [solToken, ...splTokens];
+        setAvailableTokens(allTokens);
+        setSelectedToken(allTokens[0]);
+      } else {
+        const ethToken: TokenInfo = {
+          symbol: 'ETH',
+          name: 'Ethereum',
+          isNative: true,
+          address: 'native',
+          decimals: 18,
+          balance: 'Check wallet', 
+        };
+        
+        const allTokens = [ethToken, ...COMMON_EVM_TOKENS.slice(1).map(t => ({ ...t, balance: '0.00' }))];
+        setAvailableTokens(allTokens);
+        setSelectedToken(ethToken);
       }
-
-      // Fetch current user's wallet address
-      const { data: currentUserData } = await supabase
-        .from('profile')
-        .select('solana_address')
-        .eq('id', user.id)
-        .single();
-      
-      if (currentUserData) {
-        setCurrentUserWallet(currentUserData.solana_address);
-      }
-
-      // Fetch message history
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${user.id})`)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      setMessages(data || []);
-
-      // Subscribe to real-time message changes
-      const channel = supabase
-        .channel(`chat-room-${user.id}-${userId}`)
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'messages' },
-          (payload) => {
-            const newMsg = payload.new as Message;
-            if (
-              (newMsg.sender_id === user.id && newMsg.receiver_id === userId) ||
-              (newMsg.sender_id === userId && newMsg.receiver_id === user.id)
-            ) {
-              setMessages(prev => {
-                if (prev.some(m => m.id === newMsg.id)) return prev;
-                return [...prev, newMsg];
-              });
-              setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-            }
-          }
-        )
-        .subscribe();
-
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 200);
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    } catch (e: any) {
-      console.error('Chat setup error:', e.message);
+    } catch (e) {
+      console.error('Error fetching balances:', e);
     } finally {
-      setLoading(false);
+      setFetchingBalances(false);
     }
-  }, [userId]);
+  }, [user, tipChain, currentSolWallet, currentEthWallet]);
 
   useEffect(() => {
+    if (showTipModal) fetchBalances();
+  }, [showTipModal, fetchBalances]);
+
+  useEffect(() => {
+    if (!userId || !user) return;
+
+    let active = true;
+    let channel: any = null;
+
+    const setupChat = async () => {
+      setLoading(true);
+      try {
+        // Fetch receiver's wallet addresses
+        const { data: receiverData } = await supabase
+          .from('profile')
+          .select('solana_address, ethereum_address')
+          .eq('id', userId)
+          .single();
+        
+        if (!active) return;
+
+        if (receiverData) {
+          setReceiverSolWallet(receiverData.solana_address);
+          setReceiverEthWallet(receiverData.ethereum_address);
+        }
+
+        // Fetch message history
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .or(`and(sender_id.eq.${user.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${user.id})`)
+          .order('created_at', { ascending: true });
+
+        if (error) throw error;
+        if (!active) return;
+
+        setMessages(data || []);
+
+        // Subscribe to real-time message changes
+        channel = supabase
+          .channel(`chat-room-${user.id}-${userId}`)
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'messages' },
+            (payload) => {
+              const newMsg = payload.new as Message;
+              if (
+                (newMsg.sender_id === user.id && newMsg.receiver_id === userId) ||
+                (newMsg.sender_id === userId && newMsg.receiver_id === user.id)
+              ) {
+                setMessages(prev => {
+                  if (prev.some(m => m.id === newMsg.id)) return prev;
+                  return [...prev, newMsg];
+                });
+                setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+              }
+            }
+          )
+          .subscribe();
+
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 200);
+      } catch (e: any) {
+        console.error('Chat setup error:', e.message);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
     setupChat();
-  }, [setupChat]);
+
+    return () => {
+      active = false;
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [userId, user]);
 
   const handleSendMessage = async (customContent?: string) => {
     const content = customContent || inputText.trim();
-    if (!content || !currentUserId || !userId) return;
+    if (!content || !user || !userId) return;
     
     if (!customContent) setInputText('');
 
     try {
       const newMsg = {
-        sender_id: currentUserId,
+        sender_id: user.id,
         receiver_id: userId as string,
         content: content,
       };
@@ -166,7 +269,7 @@ export default function ChatDetailScreen() {
         // Notify Receiver
         await supabase.from('notifications').insert({
           receiver_id: userId as string,
-          sender_id: currentUserId,
+          sender_id: user.id,
           type: 'chat',
           content: customContent ? 'sent you a tip' : 'sent you a message'
         });
@@ -178,24 +281,22 @@ export default function ChatDetailScreen() {
 
   const handleSendTip = async () => {
     if (!tipAmount || isNaN(parseFloat(tipAmount)) || parseFloat(tipAmount) <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid SOL amount.');
+      Alert.alert('Invalid Amount', 'Please enter a valid amount.');
       return;
     }
 
-    if (!currentUserWallet) {
-      Alert.alert(
-        'Wallet Not Connected', 
-        'Please connect your Solana wallet in Profile settings to send tips.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Go to Profile', onPress: () => router.push('/wallet-settings') }
-        ]
-      );
+    if (!selectedToken) {
+      Alert.alert('No Token', 'Please select a token to send.');
       return;
     }
 
-    if (!receiverWallet) {
-      Alert.alert('No Receiver Wallet', `${name} hasn't connected a wallet yet.`);
+    if (!currentSolWallet) {
+      Alert.alert('No Wallet', 'Please ensure your embedded wallet is ready.');
+      return;
+    }
+
+    if (!receiverSolWallet) {
+      Alert.alert('No Receiver Wallet', `${name} hasn't connected a Solana wallet yet.`);
       return;
     }
 
@@ -203,53 +304,133 @@ export default function ChatDetailScreen() {
 
     try {
       const connection = new Connection(clusterApiUrl('mainnet-beta'), 'confirmed');
-      const senderPublicKey = new PublicKey(currentUserWallet);
-      const recipientPublicKey = new PublicKey(receiverWallet);
-      const lamports = Math.floor(parseFloat(tipAmount) * LAMPORTS_PER_SOL);
+      const senderPublicKey = new PublicKey(currentSolWallet);
+      const recipientPublicKey = new PublicKey(receiverSolWallet);
 
-      // 1. Initiate MWA transaction
-      const signature = await transact(async (wallet) => {
-        // Authorize first
-        const auth = await wallet.authorize({
-          cluster: 'mainnet-beta',
-          identity: APP_IDENTITY,
-        });
+      let signature: string;
 
-        // 2. Create Transaction
-        const { blockhash } = await connection.getLatestBlockhash();
-        const transaction = new Transaction({
-          feePayer: senderPublicKey,
-          recentBlockhash: blockhash,
-        }).add(
+      if (selectedToken.isNative) {
+        // SOL Transfer
+        const transaction = new Transaction().add(
           SystemProgram.transfer({
             fromPubkey: senderPublicKey,
             toPubkey: recipientPublicKey,
-            lamports,
+            lamports: Math.floor(parseFloat(tipAmount) * LAMPORTS_PER_SOL),
           })
         );
+        
+        signature = await signAndSendSolana(transaction, connection);
+      } else {
+        // SPL Token Transfer
+        const mintPublicKey = new PublicKey(selectedToken.mint!);
+        const fromAta = await getAssociatedTokenAddress(mintPublicKey, senderPublicKey);
+        const toAta = await getAssociatedTokenAddress(mintPublicKey, recipientPublicKey);
 
-        // 3. Sign and Send
-        const signatures = await wallet.signAndSendTransactions({
-          transactions: [transaction],
-        });
+        const transaction = new Transaction().add(
+          createTransferInstruction(
+            fromAta,
+            toAta,
+            senderPublicKey,
+            Math.floor(parseFloat(tipAmount) * Math.pow(10, selectedToken.decimals))
+          )
+        );
 
-        return signatures[0];
-      });
+        signature = await signAndSendSolana(transaction, connection);
+      }
 
-      console.log('Transaction Signature:', signature);
-      
-      const tipMsg = `💸 Sent a tip of ${tipAmount} SOL\nSig: ${signature.slice(0, 8)}...`;
+      const tipMsg = `💸 Sent ${tipAmount} ${selectedToken.symbol}\nSig: ${signature.slice(0, 8)}...`;
       await handleSendMessage(tipMsg);
       
       setSendingTip(false);
       setShowTipModal(false);
       setTipAmount('');
-      Alert.alert('Success', `Successfully tipped ${tipAmount} SOL to ${name}!`);
+      Alert.alert('Success', `Successfully tipped ${tipAmount} ${selectedToken.symbol} to ${name}!`);
     } catch (e: any) {
       console.error('Tipping error:', e);
       setSendingTip(false);
-      Alert.alert('Transaction Failed', e.message || 'Could not complete the tip transaction.');
+      Alert.alert('Transaction Failed', e.message || 'Could not complete the transaction.');
     }
+  };
+
+  const signAndSendSolana = async (transaction: Transaction, connection: Connection) => {
+    const senderPublicKey = new PublicKey(currentSolWallet!);
+    if (embeddedSolana) {
+      const provider = await (embeddedSolana as any).getProvider();
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = senderPublicKey;
+      
+      const base64Transaction = transaction.serialize({ requireAllSignatures: false }).toString('base64');
+      return await provider.request({
+        method: 'signAndSendTransaction',
+        params: { transaction: base64Transaction, connection }
+      }) as string;
+    } else {
+      return await transact(async (wallet) => {
+        await wallet.authorize({ cluster: 'mainnet-beta', identity: APP_IDENTITY });
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = senderPublicKey;
+        const base64Transaction = transaction.serialize({ requireAllSignatures: false }).toString('base64');
+        const sigs = await wallet.signAndSendTransactions({ payloads: [base64Transaction] });
+        return sigs.signatures[0];
+      });
+    }
+  };
+
+  const handleSendEvmTip = async () => {
+    if (!selectedToken || !receiverEthWallet) {
+      Alert.alert('Error', 'Token or receiver address missing.');
+      return;
+    }
+    setSendingTip(true);
+
+    try {
+      const provider = await (embeddedEthereum as any)?.getProvider();
+      if (!provider) throw new Error('No EVM provider');
+      
+      const amount = BigInt(Math.floor(parseFloat(tipAmount) * Math.pow(10, selectedToken.decimals)));
+      let txHash: string;
+
+      if (selectedToken.isNative) {
+        txHash = await provider.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: currentEthWallet,
+            to: receiverEthWallet,
+            value: '0x' + amount.toString(16),
+          }]
+        });
+      } else {
+        // ERC-20 Transfer: method ID a9059cbb for transfer(address,uint256)
+        const data = `0xa9059cbb${receiverEthWallet.slice(2).padStart(64, '0')}${amount.toString(16).padStart(64, '0')}`;
+        txHash = await provider.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: currentEthWallet,
+            to: selectedToken.address,
+            data: data,
+          }]
+        });
+      }
+
+      const tipMsg = `💸 Sent ${tipAmount} ${selectedToken.symbol}\nHash: ${txHash.slice(0, 10)}...`;
+      await handleSendMessage(tipMsg);
+      
+      setSendingTip(false);
+      setShowTipModal(false);
+      setTipAmount('');
+      Alert.alert('Success', `Successfully tipped ${tipAmount} ${selectedToken.symbol} to ${name}!`);
+    } catch (e: any) {
+      console.error('EVM Tipping error:', e);
+      setSendingTip(false);
+      Alert.alert('Transaction Failed', e.message || 'Could not complete the EVM tip.');
+    }
+  };
+
+  const executeTip = () => {
+    if (tipChain === 'solana') handleSendTip();
+    else handleSendEvmTip();
   };
 
   return (
@@ -293,7 +474,7 @@ export default function ChatDetailScreen() {
             <Text style={styles.emptyText}>No messages yet. Send a message to start conversation!</Text>
           ) : (
             messages.map((msg, index) => {
-              const isMe = msg.sender_id === currentUserId;
+              const isMe = msg.sender_id === user?.id;
               const isTip = msg.content.startsWith('💸 Sent a tip of');
               const msgTime = new Date(msg.created_at).toLocaleTimeString(undefined, { 
                 hour: '2-digit', 
@@ -362,19 +543,59 @@ export default function ChatDetailScreen() {
             </View>
 
             <View style={styles.modalBody}>
+              {/* Chain Selector */}
+              <View style={styles.chainSelector}>
+                <TouchableOpacity 
+                  style={[styles.chainToggle, tipChain === 'solana' && styles.chainToggleActive]}
+                  onPress={() => setTipChain('solana')}
+                >
+                  <Ionicons name="flash" size={16} color={tipChain === 'solana' ? '#FFFFFF' : '#6B7280'} />
+                  <Text style={[styles.chainToggleText, tipChain === 'solana' && styles.chainToggleTextActive]}>Solana</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.chainToggle, tipChain === 'ethereum' && styles.chainToggleActive]}
+                  onPress={() => setTipChain('ethereum')}
+                >
+                  <FontAwesome5 name="ethereum" size={16} color={tipChain === 'ethereum' ? '#FFFFFF' : '#6B7280'} />
+                  <Text style={[styles.chainToggleText, tipChain === 'ethereum' && styles.chainToggleTextActive]}>Ethereum</Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.recipientInfo}>
                 <View style={styles.avatarSmall}>
                   <Text style={styles.avatarTextSmall}>{(name as string || 'U').charAt(0)}</Text>
                 </View>
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.recipientName}>To: {name}</Text>
                   <Text style={styles.recipientWallet} numberOfLines={1}>
-                    {receiverWallet ? `${receiverWallet.slice(0, 8)}...${receiverWallet.slice(-8)}` : 'No wallet address found'}
+                    {receiverWallet ? `${receiverWallet.slice(0, 10)}...${receiverWallet.slice(-10)}` : 'No wallet address found'}
                   </Text>
                 </View>
               </View>
 
-              <Text style={styles.inputLabel}>Amount (SOL)</Text>
+              <Text style={styles.inputLabel}>Token & Amount</Text>
+              
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tokenList}>
+                {fetchingBalances ? (
+                  <ActivityIndicator size="small" color={Theme.colors.primary} />
+                ) : (
+                  availableTokens.map((t, i) => (
+                    <TouchableOpacity 
+                      key={i} 
+                      style={[styles.tokenPill, selectedToken?.symbol === t.symbol && styles.tokenPillActive]}
+                      onPress={() => setSelectedToken(t)}
+                    >
+                      <Text style={[styles.tokenPillText, selectedToken?.symbol === t.symbol && styles.tokenPillTextActive]}>
+                        {t.symbol}
+                      </Text>
+                      <Text style={[styles.tokenBalance, selectedToken?.symbol === t.symbol && styles.tokenBalanceActive]}>
+                        {t.balance}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+
               <TextInput
                 style={styles.tipInput}
                 placeholder="0.00"
@@ -393,26 +614,28 @@ export default function ChatDetailScreen() {
                 />
                 <Text style={[styles.walletStatusText, { color: currentUserWallet ? "#059669" : "#D97706" }]}>
                   {currentUserWallet 
-                    ? `Connected: ${currentUserWallet.slice(0, 6)}...${currentUserWallet.slice(-4)}` 
-                    : 'Wallet not connected'
+                    ? `Using: ${currentUserWallet.slice(0, 6)}...${currentUserWallet.slice(-4)}` 
+                    : 'Your wallet not ready'
                   }
                 </Text>
               </View>
 
               <TouchableOpacity 
-                style={[styles.confirmTipButton, sendingTip && { opacity: 0.7 }]}
-                onPress={handleSendTip}
-                disabled={sendingTip}
+                style={[styles.confirmTipButton, (sendingTip || !currentUserWallet || !receiverWallet) && { opacity: 0.7 }]}
+                onPress={executeTip}
+                disabled={sendingTip || !currentUserWallet || !receiverWallet}
               >
                 {sendingTip ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <Text style={styles.confirmTipButtonText}>Confirm & Send SOL</Text>
+                  <Text style={styles.confirmTipButtonText}>
+                    Confirm & Send {tipChain === 'solana' ? 'SOL' : 'ETH'}
+                  </Text>
                 )}
               </TouchableOpacity>
               
               <Text style={styles.disclaimer}>
-                Transactions on Solana are near-instant and non-reversible.
+                Transactions are near-instant and non-reversible.
               </Text>
             </View>
           </Animated.View>
@@ -611,6 +834,38 @@ const styles = StyleSheet.create({
   modalBody: {
     gap: 16,
   },
+  chainSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
+  },
+  chainToggle: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 6,
+  },
+  chainToggleActive: {
+    backgroundColor: '#4F46E5',
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  chainToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  chainToggleTextActive: {
+    color: '#FFFFFF',
+  },
   recipientInfo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -656,6 +911,41 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E7EB',
     paddingVertical: 8,
     textAlign: 'center',
+    marginTop: 10,
+  },
+  tokenList: {
+    flexDirection: 'row',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  tokenPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    marginRight: 10,
+    alignItems: 'center',
+    minWidth: 80,
+  },
+  tokenPillActive: {
+    backgroundColor: '#4F46E5',
+  },
+  tokenPillText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  tokenPillTextActive: {
+    color: '#FFFFFF',
+  },
+  tokenBalance: {
+    fontSize: 10,
+    color: '#6B7280',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  tokenBalanceActive: {
+    color: 'rgba(255,255,255,0.8)',
   },
   walletStatus: {
     flexDirection: 'row',
