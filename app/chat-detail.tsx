@@ -1,37 +1,37 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TextInput, 
-  ScrollView, 
-  TouchableOpacity, 
-  KeyboardAvoidingView, 
-  Platform, 
-  ActivityIndicator, 
-  Alert,
-  Modal
-} from 'react-native';
-import { Theme } from '@/constants/theme';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
-import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol';
-import { 
-  Connection, 
-  clusterApiUrl, 
-  PublicKey, 
-  Transaction, 
-  SystemProgram, 
-  LAMPORTS_PER_SOL 
-} from '@solana/web3.js';
-import { 
-  createTransferInstruction, 
-  getAssociatedTokenAddress, 
-  TOKEN_PROGRAM_ID,
-} from '@solana/spl-token';
+import { Theme } from '@/constants/Theme';
+import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { usePrivy } from '@privy-io/expo';
+import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol';
+import {
+    createTransferInstruction,
+    getAssociatedTokenAddress,
+    TOKEN_PROGRAM_ID,
+} from '@solana/spl-token';
+import {
+    clusterApiUrl,
+    Connection,
+    LAMPORTS_PER_SOL,
+    PublicKey,
+    SystemProgram,
+    Transaction
+} from '@solana/web3.js';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
 
 const COMMON_EVM_TOKENS = [
   { symbol: 'ETH', name: 'Ethereum', address: 'native', decimals: 18 },

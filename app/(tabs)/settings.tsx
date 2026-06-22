@@ -1,22 +1,22 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  ScrollView, 
-  TouchableOpacity, 
-  TextInput, 
-  Modal, 
-  Alert, 
-  ActivityIndicator,
-  Platform
-} from 'react-native';
-import { Theme } from '@/constants/theme';
-import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import Animated, { FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
-import { usePrivy, useEmbeddedSolanaWallet, useEmbeddedEthereumWallet } from '@privy-io/expo';
+import { Theme } from '@/constants/Theme';
+import { FontAwesome5, Ionicons } from '@expo/vector-icons';
+import { useEmbeddedEthereumWallet, useEmbeddedSolanaWallet, usePrivy } from '@privy-io/expo';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 
 interface WorkExperience {
   role: string;

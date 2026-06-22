@@ -1,25 +1,25 @@
 import { Cache } from '@/constants/Cache';
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  ScrollView, 
-  TouchableOpacity, 
-  TextInput, 
-  Modal, 
-  Image, 
-  ActivityIndicator, 
-  Alert, 
-  Linking 
-} from 'react-native';
-import { Theme } from '@/constants/theme';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
-import * as ImagePicker from 'expo-image-picker';
+import { Theme } from '@/constants/Theme';
+import { Ionicons } from '@expo/vector-icons';
 import { usePrivy } from '@privy-io/expo';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Image,
+    Linking,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 
 interface Post {
   id: string;
@@ -159,20 +159,14 @@ export default function HomeFeedScreen() {
 
   // Like management
   const handleLikeToggle = async (post: Post) => {
-<<<<<<< HEAD
-    if (!currentUserId) {
-      console.log('Like failed: No current user ID');
+    if (!user) {
+      console.log('Like failed: No user from Privy');
       Alert.alert('Error', 'You must be logged in to like posts');
       return;
     }
 
-    const existingLike = likes.find(l => l.post_id === post.id && l.user_id === currentUserId);
-    console.log('Like toggle attempt:', { postId: post.id, userId: currentUserId, existingLike: !!existingLike });
-=======
-    if (!user) return;
-
     const existingLike = likes.find(l => l.post_id === post.id && l.user_id === user.id);
->>>>>>> origin/bughacker
+    console.log('Like toggle attempt:', { postId: post.id, userId: user.id, existingLike: !!existingLike });
 
     try {
       if (existingLike) {
@@ -191,7 +185,7 @@ export default function HomeFeedScreen() {
         const tempLike = {
           id: `temp-${Date.now()}`,
           post_id: post.id,
-          user_id: currentUserId
+          user_id: user.id
         };
         setLikes(prev => [...prev, tempLike]);
 
@@ -219,14 +213,13 @@ export default function HomeFeedScreen() {
           // Replace temp like with real like from database
           setLikes(prev => prev.map(l => l.id === tempLike.id ? data : l));
           
-<<<<<<< HEAD
           // Send notification to author (optional - don't fail if this doesn't work)
-          if (post.user_id !== currentUserId) {
+          if (post.user_id !== user.id) {
             console.log('Sending notification to author:', post.user_id);
             try {
               await supabase.from('notifications').insert({
                 receiver_id: post.user_id,
-                sender_id: currentUserId,
+                sender_id: user.id,
                 type: 'like',
                 post_id: post.id,
                 content: 'liked your post'
@@ -235,17 +228,6 @@ export default function HomeFeedScreen() {
               console.warn('Notification failed (non-critical):', notifError);
               // Don't throw - notification failure shouldn't break the like functionality
             }
-=======
-          // Send notification to author
-          if (post.user_id !== user.id) {
-            await supabase.from('notifications').insert({
-              receiver_id: post.user_id,
-              sender_id: user.id,
-              type: 'like',
-              post_id: post.id,
-              content: 'liked your post'
-            });
->>>>>>> origin/bughacker
           }
         }
       }
@@ -290,13 +272,12 @@ export default function HomeFeedScreen() {
         setComments(prev => [...prev, data as any]);
         setNewCommentText('');
         
-<<<<<<< HEAD
         // Notify Author (optional - don't fail if this doesn't work)
-        if (post.user_id !== currentUserId) {
+        if (post.user_id !== user.id) {
           try {
             await supabase.from('notifications').insert({
               receiver_id: post.user_id,
-              sender_id: currentUserId,
+              sender_id: user.id,
               type: 'comment',
               post_id: post.id,
               content: `commented: "${newCommentText.substring(0, 30)}..."`
@@ -305,17 +286,6 @@ export default function HomeFeedScreen() {
             console.warn('Notification failed (non-critical):', notifError);
             // Don't throw - notification failure shouldn't break the comment functionality
           }
-=======
-        // Notify Author
-        if (post.user_id !== user.id) {
-          await supabase.from('notifications').insert({
-            receiver_id: post.user_id,
-            sender_id: user.id,
-            type: 'comment',
-            post_id: post.id,
-            content: `commented: "${newCommentText.substring(0, 30)}..."`
-          });
->>>>>>> origin/bughacker
         }
       }
     } catch (e: any) {

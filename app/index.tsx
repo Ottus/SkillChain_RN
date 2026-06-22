@@ -1,6 +1,6 @@
+import { Theme } from '@/constants/Theme';
 import React from 'react';
-import { View, ActivityIndicator } from 'react-native';
-import { Theme } from '@/constants/theme';
+import { ActivityIndicator, View } from 'react-native';
 
 export default function Index() {
   // Redirection is handled by AuthStateListener in _layout.tsx

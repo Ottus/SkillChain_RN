@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { Theme } from '@/constants/theme';
-import { useRouter } from 'expo-router';
 import { StyledInput } from '@/components/StyledInput';
+import { Theme } from '@/constants/Theme';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInUp, FadeIn, FadeOut } from 'react-native-reanimated';
 import { useLoginWithEmail, usePrivy } from '@privy-io/expo';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Animated, { FadeIn, FadeInUp, FadeOut } from 'react-native-reanimated';
 
 export default function SignupScreen() {
   const router = useRouter();

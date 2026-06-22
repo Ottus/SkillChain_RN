@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView } from 'react-native';
-import { Theme } from '@/constants/theme';
-import { useRouter } from 'expo-router';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
-import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol';
+import { Theme } from '@/constants/Theme';
+import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { usePrivy } from '@privy-io/expo';
+import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 
 const APP_IDENTITY = {
   name: 'SkillChain',

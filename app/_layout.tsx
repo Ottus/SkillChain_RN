@@ -1,10 +1,10 @@
-import { useEffect } from "react";
+import { Theme } from "@/constants/Theme";
+import { Ionicons } from "@expo/vector-icons";
+import { PrivyProvider, useEmbeddedEthereumWallet, useEmbeddedSolanaWallet, usePrivy } from '@privy-io/expo';
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { Theme } from "@/constants/theme";
-import { View, ActivityIndicator, Text, TouchableOpacity, Platform } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { PrivyProvider, usePrivy, useEmbeddedSolanaWallet, useEmbeddedEthereumWallet } from '@privy-io/expo';
+import { useEffect } from "react";
+import { ActivityIndicator, Platform, Text, TouchableOpacity, View } from "react-native";
 
 function AuthStateListener() {
   const router = useRouter();
@@ -115,6 +115,7 @@ function AuthStateListener() {
 export default function RootLayout() {
   const appId = process.env.EXPO_PUBLIC_PRIVY_APP_ID || process.env.APP_ID || "";
   const clientId = process.env.EXPO_PUBLIC_PRIVY_CLIENT_ID || process.env.CLIENT_ID || "";
+  const isWeb = Platform.OS === 'web';
 
   if (!appId || !clientId) {
     console.error('[RootLayout] Privy App ID or Client ID is MISSING from .env');
@@ -122,8 +123,26 @@ export default function RootLayout() {
 
   console.log('[RootLayout] Initializing with:', { 
     appId: appId ? `${appId.substring(0, 5)}...` : 'MISSING', 
-    clientId: clientId ? `${clientId.substring(0, 10)}...` : 'MISSING' 
+    clientId: clientId ? `${clientId.substring(0, 10)}...` : 'MISSING',
+    platform: Platform.OS,
+    isWeb 
   });
+
+  // Privy doesn't work well in Expo Web without additional setup
+  // Use only on native platforms
+  if (isWeb) {
+    return (
+      <>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: Theme.colors.background },
+          }}
+        />
+      </>
+    );
+  }
 
   return (
     <PrivyProvider
@@ -137,6 +156,10 @@ export default function RootLayout() {
           solana: {
             createOnLogin: 'users-without-wallets',
           },
+        },
+        appearance: {
+          theme: 'light',
+          accentColor: '#6366f1',
         },
       }}
     >

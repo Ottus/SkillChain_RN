@@ -1,6 +1,6 @@
 import { Cache } from '@/constants/Cache';
 import { supabase } from '@/constants/Supabase';
-import { Theme } from '@/constants/theme';
+import { Theme } from '@/constants/Theme';
 import { Ionicons } from '@expo/vector-icons';
 import { usePrivy } from '@privy-io/expo';
 import { useRouter } from 'expo-router';

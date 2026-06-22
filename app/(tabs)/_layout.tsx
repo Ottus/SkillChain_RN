@@ -1,8 +1,8 @@
-import React from 'react';
-import { Tabs } from 'expo-router';
-import { View, StyleSheet } from 'react-native';
+import { Theme } from '@/constants/Theme';
 import { Ionicons } from '@expo/vector-icons';
-import { Theme } from '@/constants/theme';
+import { Tabs } from 'expo-router';
+import React from 'react';
+import { StyleSheet, View } from 'react-native';
 
 interface TabBarIconProps {
   focused: boolean;
