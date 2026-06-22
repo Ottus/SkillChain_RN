@@ -1,23 +1,23 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  ScrollView, 
-  TouchableOpacity, 
-  TextInput, 
-  Modal, 
-  Image, 
-  ActivityIndicator, 
-  Alert, 
-  Linking 
-} from 'react-native';
+import { Cache } from '@/constants/Cache';
+import { supabase } from '@/constants/Supabase';
 import { Theme } from '@/constants/Theme';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
-import { supabase } from '@/constants/Supabase';
 import * as ImagePicker from 'expo-image-picker';
-import { Cache } from '@/constants/Cache';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Image,
+    Linking,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 
 interface Post {
   id: string;
@@ -160,20 +160,42 @@ export default function HomeFeedScreen() {
 
   // Like management
   const handleLikeToggle = async (post: Post) => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      console.log('Like failed: No current user ID');
+      Alert.alert('Error', 'You must be logged in to like posts');
+      return;
+    }
 
     const existingLike = likes.find(l => l.post_id === post.id && l.user_id === currentUserId);
+    console.log('Like toggle attempt:', { postId: post.id, userId: currentUserId, existingLike: !!existingLike });
 
     try {
       if (existingLike) {
-        // Optimistic State Update
+        // Optimistic State Update for DELETE
         setLikes(prev => prev.filter(l => l.id !== existingLike.id));
-        await supabase.from('likes').delete().eq('id', existingLike.id);
+        
+        console.log('Deleting like:', existingLike.id);
+        const { error } = await supabase.from('likes').delete().eq('id', existingLike.id);
+        if (error) {
+          console.error('Delete like error:', error);
+          throw error;
+        }
+        console.log('Like deleted successfully');
       } else {
+        // Optimistic State Update for INSERT
+        const tempLike = {
+          id: `temp-${Date.now()}`,
+          post_id: post.id,
+          user_id: currentUserId
+        };
+        setLikes(prev => [...prev, tempLike]);
+
         const newLike = {
           post_id: post.id,
           user_id: currentUserId
         };
+        
+        console.log('Inserting like:', newLike);
         // Insert
         const { data, error } = await supabase
           .from('likes')
@@ -181,24 +203,38 @@ export default function HomeFeedScreen() {
           .select()
           .single();
 
-        if (error) throw error;
+        if (error) {
+          console.error('Insert like error:', error);
+          throw error;
+        }
+        
+        console.log('Like inserted successfully:', data);
+        
         if (data) {
-          setLikes(prev => [...prev, data]);
+          // Replace temp like with real like from database
+          setLikes(prev => prev.map(l => l.id === tempLike.id ? data : l));
           
-          // Send notification to author
+          // Send notification to author (optional - don't fail if this doesn't work)
           if (post.user_id !== currentUserId) {
-            await supabase.from('notifications').insert({
-              receiver_id: post.user_id,
-              sender_id: currentUserId,
-              type: 'like',
-              post_id: post.id,
-              content: 'liked your post'
-            });
+            console.log('Sending notification to author:', post.user_id);
+            try {
+              await supabase.from('notifications').insert({
+                receiver_id: post.user_id,
+                sender_id: currentUserId,
+                type: 'like',
+                post_id: post.id,
+                content: 'liked your post'
+              });
+            } catch (notifError) {
+              console.warn('Notification failed (non-critical):', notifError);
+              // Don't throw - notification failure shouldn't break the like functionality
+            }
           }
         }
       }
     } catch (e: any) {
       console.error('Like error:', e);
+      Alert.alert('Like Error', e.message || 'Failed to like post. Please try again.');
       refreshFeed(); // Rollback/Resync
     }
   };
@@ -237,15 +273,20 @@ export default function HomeFeedScreen() {
         setComments(prev => [...prev, data as any]);
         setNewCommentText('');
         
-        // Notify Author
+        // Notify Author (optional - don't fail if this doesn't work)
         if (post.user_id !== currentUserId) {
-          await supabase.from('notifications').insert({
-            receiver_id: post.user_id,
-            sender_id: currentUserId,
-            type: 'comment',
-            post_id: post.id,
-            content: `commented: "${newCommentText.substring(0, 30)}..."`
-          });
+          try {
+            await supabase.from('notifications').insert({
+              receiver_id: post.user_id,
+              sender_id: currentUserId,
+              type: 'comment',
+              post_id: post.id,
+              content: `commented: "${newCommentText.substring(0, 30)}..."`
+            });
+          } catch (notifError) {
+            console.warn('Notification failed (non-critical):', notifError);
+            // Don't throw - notification failure shouldn't break the comment functionality
+          }
         }
       }
     } catch (e: any) {
