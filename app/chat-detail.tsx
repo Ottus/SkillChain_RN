@@ -2,7 +2,6 @@ import { supabase } from '@/constants/Supabase';
 import { Theme } from '@/constants/Theme';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { usePrivy } from '@privy-io/expo';
-import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol';
 import {
     createTransferInstruction,
     getAssociatedTokenAddress,
@@ -32,6 +31,14 @@ import {
     View
 } from 'react-native';
 import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
+// Conditionally import MWA only for native builds
+let transact: any = null;
+try {
+  const mwa = require('@solana-mobile/mobile-wallet-adapter-protocol');
+  transact = mwa.transact;
+} catch (e) {
+  console.log('MWA not available (running in Expo Go)');
+}
 
 const COMMON_EVM_TOKENS = [
   { symbol: 'ETH', name: 'Ethereum', address: 'native', decimals: 18 },
@@ -359,13 +366,16 @@ export default function ChatDetailScreen() {
       const { blockhash } = await connection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = senderPublicKey;
-      
+
       const base64Transaction = transaction.serialize({ requireAllSignatures: false }).toString('base64');
       return await provider.request({
         method: 'signAndSendTransaction',
         params: { transaction: base64Transaction, connection }
       }) as string;
     } else {
+      if (!transact) {
+        throw new Error('Mobile wallet adapter not available in Expo Go. Use a development build instead.');
+      }
       return await transact(async (wallet) => {
         await wallet.authorize({ cluster: 'mainnet-beta', identity: APP_IDENTITY });
         const { blockhash } = await connection.getLatestBlockhash();

@@ -2,11 +2,18 @@ import { supabase } from '@/constants/Supabase';
 import { Theme } from '@/constants/Theme';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { usePrivy } from '@privy-io/expo';
-import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
+// Conditionally import MWA only for native builds
+let transact: any = null;
+try {
+  const mwa = require('@solana-mobile/mobile-wallet-adapter-protocol');
+  transact = mwa.transact;
+} catch (e) {
+  console.log('MWA not available (running in Expo Go)');
+}
 
 const APP_IDENTITY = {
   name: 'SkillChain',
@@ -51,7 +58,12 @@ export default function WalletSettingsScreen() {
   const handleConnectExternalSolana = async () => {
     if (!user) return;
     console.log('[WalletSettings] Starting external Solana connection (MWA)');
-    
+
+    if (!transact) {
+      Alert.alert('Not Available', 'Mobile wallet adapter not available in Expo Go. Use a development build instead.');
+      return;
+    }
+
     if (Platform.OS === 'web') {
       Alert.alert('Web Wallet', 'Please use a browser extension like Phantom on web.');
       return;
