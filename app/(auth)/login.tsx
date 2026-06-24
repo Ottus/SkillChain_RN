@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLoginWithEmail, useLoginWithOAuth, usePrivy } from '@privy-io/expo';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn, FadeInUp, FadeOut } from 'react-native-reanimated';
 
 export default function LoginScreen() {
@@ -15,38 +15,6 @@ export default function LoginScreen() {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [isCodeSent, setIsCodeSent] = useState(false);
-
-  // If already authenticated, redirecting is handled by _layout
-  if (isReady && authenticated) {
-    const emailAccount = user?.linked_accounts?.find(acc => acc.type === 'email');
-    const emailAddress = emailAccount?.address || 'Wallet User';
-
-    return (
-      <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Theme.colors.primary} />
-          <Text style={styles.loadingText}>Restoring your session...</Text>
-
-          <View style={{ marginTop: 40, padding: 20, backgroundColor: '#F3F4F6', borderRadius: 16, width: '100%' }}>
-            <Text style={{ color: '#4B5563', fontSize: 12, fontWeight: '700', marginBottom: 8 }}>DEBUG CONSOLE (LOGIN)</Text>
-            <Text style={{ color: '#6B7280', fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
-              SDK Ready: true{"\n"}
-              User ID: {user?.id ? `${user.id.substring(0, 15)}...` : 'Loading...'}{"\n"}
-              Identity: {emailAddress}
-            </Text>
-          </View>
-
-          <TouchableOpacity 
-            onPress={() => router.replace("/(tabs)")}
-            style={{ marginTop: 24, backgroundColor: '#111827', paddingHorizontal: 24, paddingVertical: 16, borderRadius: 12, width: '100%' }}
-          >
-            <Text style={{ color: '#FFFFFF', textAlign: 'center', fontWeight: '700' }}>Manual Enter Dashboard</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
 
   const { sendCode, loginWithCode } = useLoginWithEmail({
     onSendCodeSuccess: () => {
@@ -75,6 +43,18 @@ export default function LoginScreen() {
       }
     }
   });
+
+  // If already authenticated, redirecting is handled by _layout
+  if (isReady && authenticated) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Theme.colors.primary} />
+          <Text style={styles.loadingText}>Restoring your session...</Text>
+        </View>
+      </View>
+    );
+  }
 
   const handleAuth = async () => {
     if (!email) {
@@ -109,7 +89,7 @@ export default function LoginScreen() {
         <Animated.View entering={FadeInUp.duration(800)} style={styles.content}>
           <View style={styles.header}>
             <View style={styles.logoWrapper}>
-              <Ionicons name="flash" size={42} color="#FFFFFF" />
+              <Image source={require('../../assets/images/img.png')} style={styles.logoImage} resizeMode="contain" />
             </View>
             <Text style={styles.title}>SkillChain</Text>
             <Text style={styles.subtitle}>
@@ -239,6 +219,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 15,
     elevation: 8,
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
   },
   title: {
     fontSize: 36,

@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
 import { Cache } from '@/constants/Cache';
+import { usePrivy } from '@privy-io/expo';
 
 interface WorkExperience {
   role: string;
@@ -51,6 +52,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const targetUserId = params.userId as string | undefined;
+  const { user } = usePrivy();
 
   // Profile data state
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -83,10 +85,12 @@ export default function ProfileScreen() {
 
   // Re-run loading on page focus or when userId parameter changes
   const loadProfileData = useCallback(async () => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
       setCurrentUserId(user.id);
 
       const queryId = targetUserId || user.id;
@@ -136,9 +140,13 @@ export default function ProfileScreen() {
       Alert.alert('Profile Error', 'Failed to load profile details.');
       setLoading(false);
     }
-  }, [targetUserId]);
+  }, [targetUserId, user]);
 
-  useFocusEffect(loadProfileData);
+  useFocusEffect(
+    React.useCallback(() => {
+      loadProfileData();
+    }, [loadProfileData])
+  );
 
   const handleSaveBasicInfo = async () => {
     if (!profile || !currentUserId) return;

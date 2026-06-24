@@ -1,12 +1,15 @@
 import { supabase } from '@/constants/Supabase';
 import { Theme } from '@/constants/Theme';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
-import { usePrivy } from '@privy-io/expo';
+import { usePrivy, useEmbeddedEthereumWallet, useEmbeddedSolanaWallet } from '@privy-io/expo';
 import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
+import * as Clipboard from 'expo-clipboard';
+import { ethers } from 'ethers';
+import { Connection, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
 
 const APP_IDENTITY = {
   name: 'SkillChain',
@@ -21,10 +24,181 @@ export default function WalletSettingsScreen() {
   const [externalSolana, setExternalSolana] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
 
-  // Identify Wallets from linkedAccounts
-  const wallets = user?.linked_accounts || [];
-  const embeddedSolana = wallets.find((w: any) => w.wallet_client_type === 'privy' && w.chain_type === 'solana');
-  const embeddedEthereum = wallets.find((w: any) => w.wallet_client_type === 'privy' && w.chain_type === 'ethereum');
+  // Embedded wallet hooks
+  const solanaWalletState = useEmbeddedSolanaWallet();
+  const ethereumWalletState = useEmbeddedEthereumWallet();
+
+  const embeddedSolana = solanaWalletState.wallets ? solanaWalletState.wallets[0] : undefined;
+  const embeddedEthereum = ethereumWalletState.wallets ? ethereumWalletState.wallets[0] : undefined;
+
+  // Transfer Modal states
+  const [modalVisible, setModalVisible] = useState(false);
+  const [transferChain, setTransferChain] = useState<'solana' | 'ethereum' | 'external-solana'>('solana');
+  const [recipientAddress, setRecipientAddress] = useState('');
+  const [amount, setAmount] = useState('');
+  const [transferring, setTransferring] = useState(false);
+
+  // Copy helper
+  const copyToClipboard = async (address: string) => {
+    await Clipboard.setStringAsync(address);
+    Alert.alert('Copied', 'Wallet address copied to clipboard!');
+  };
+
+  // Transfer Solana (Embedded)
+  const handleTransferSolana = async () => {
+    if (!embeddedSolana) {
+      Alert.alert('Error', 'Embedded Solana wallet is not ready.');
+      return;
+    }
+    if (!recipientAddress.trim()) {
+      Alert.alert('Error', 'Please enter a recipient address.');
+      return;
+    }
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount.');
+      return;
+    }
+
+    setTransferring(true);
+    try {
+      const provider = await embeddedSolana.getProvider();
+      const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+      const fromPubkey = new PublicKey(embeddedSolana.address);
+      const toPubkey = new PublicKey(recipientAddress.trim());
+
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey,
+          toPubkey,
+          lamports: Math.round(Number(amount) * 1_000_000_000),
+        })
+      );
+
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = fromPubkey;
+
+      const signatureResult = await provider.request({
+        method: 'signAndSendTransaction',
+        params: {
+          transaction: transaction,
+          connection: connection,
+        },
+      });
+
+      const signature = signatureResult.signature;
+
+      console.log('[Transfer Solana] Signature:', signature);
+      Alert.alert('Success', `Successfully sent ${amount} SOL.\nTx ID: ${signature.substring(0, 12)}...`);
+      setModalVisible(false);
+      setRecipientAddress('');
+      setAmount('');
+    } catch (e: any) {
+      console.error('[Transfer Solana] Error:', e);
+      Alert.alert('Transfer Failed', e.message || 'Solana transfer failed.');
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  // Transfer Ethereum (Embedded)
+  const handleTransferEthereum = async () => {
+    if (!embeddedEthereum) {
+      Alert.alert('Error', 'Embedded Ethereum wallet is not ready.');
+      return;
+    }
+    if (!recipientAddress.trim()) {
+      Alert.alert('Error', 'Please enter a recipient address.');
+      return;
+    }
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount.');
+      return;
+    }
+
+    setTransferring(true);
+    try {
+      const provider = await embeddedEthereum.getProvider();
+      const web3Provider = new ethers.providers.Web3Provider(provider);
+      const signer = web3Provider.getSigner();
+
+      const tx = await signer.sendTransaction({
+        to: recipientAddress.trim(),
+        value: ethers.utils.parseEther(amount),
+      });
+
+      console.log('[Transfer Ethereum] Tx:', tx.hash);
+      Alert.alert('Success', `Successfully sent ${amount} ETH.\nTx Hash: ${tx.hash.substring(0, 12)}...`);
+      setModalVisible(false);
+      setRecipientAddress('');
+      setAmount('');
+    } catch (e: any) {
+      console.error('[Transfer Ethereum] Error:', e);
+      Alert.alert('Transfer Failed', e.message || 'Ethereum transfer failed.');
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  // Transfer Solana (External Wallet via MWA)
+  const handleTransferExternalSolana = async () => {
+    if (!externalSolana) {
+      Alert.alert('Error', 'External Solana wallet is not connected.');
+      return;
+    }
+    if (!recipientAddress.trim()) {
+      Alert.alert('Error', 'Please enter a recipient address.');
+      return;
+    }
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount.');
+      return;
+    }
+
+    setTransferring(true);
+    try {
+      await transact(async (wallet) => {
+        const authResult = await wallet.authorize({
+          cluster: 'mainnet-beta',
+          identity: APP_IDENTITY,
+        });
+
+        const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+        const fromPubkey = new PublicKey(authResult.accounts[0].address);
+        const toPubkey = new PublicKey(recipientAddress.trim());
+
+        const transaction = new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey,
+            toPubkey,
+            lamports: Math.round(Number(amount) * 1_000_000_000),
+          })
+        );
+
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = fromPubkey;
+
+        const payload = transaction.serialize({ requireAllSignatures: false }).toString('base64');
+        const result = await wallet.signAndSendTransactions({
+          payloads: [payload],
+        });
+
+        const txSignature = result.signatures[0];
+
+        console.log('[Transfer External Solana] Signature:', txSignature);
+        Alert.alert('Success', `Successfully sent ${amount} SOL from external wallet.\nTx: ${txSignature.substring(0, 12)}...`);
+      });
+      setModalVisible(false);
+      setRecipientAddress('');
+      setAmount('');
+    } catch (e: any) {
+      console.error('[Transfer External Solana] Error:', e);
+      Alert.alert('Transfer Failed', e.message || 'External Solana transfer failed.');
+    } finally {
+      setTransferring(false);
+    }
+  };
 
   useEffect(() => {
     checkExternalWallet();
@@ -148,11 +322,35 @@ export default function WalletSettingsScreen() {
             </View>
             <View style={styles.addressContainer}>
               <Text style={styles.addressText} numberOfLines={1}>
-                {(embeddedSolana as any)?.address || 'Generating...'}
+                {embeddedSolana?.address || 'Generating...'}
               </Text>
+              {embeddedSolana?.address && (
+                <View style={styles.actionButtonsRow}>
+                  <TouchableOpacity 
+                    onPress={() => copyToClipboard(embeddedSolana.address)}
+                    style={styles.actionIconButton}
+                  >
+                    <Ionicons name="copy-outline" size={16} color={Theme.colors.primary} />
+                    <Text style={styles.actionIconText}>Copy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => {
+                      setTransferChain('solana');
+                      setRecipientAddress('');
+                      setAmount('');
+                      setModalVisible(true);
+                    }}
+                    style={[styles.actionIconButton, { marginLeft: 16 }]}
+                  >
+                    <Ionicons name="send-outline" size={16} color="#059669" />
+                    <Text style={[styles.actionIconText, { color: '#059669' }]}>Send</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </Animated.View>
 
+          {/* Ethereum Embedded */}
           <Animated.View entering={FadeInUp.delay(200)} style={[styles.walletCard, { marginTop: 12 }]}>
             <View style={styles.walletHeader}>
               <View style={[styles.chainIcon, { backgroundColor: '#EEF2FF' }]}>
@@ -165,8 +363,31 @@ export default function WalletSettingsScreen() {
             </View>
             <View style={styles.addressContainer}>
               <Text style={styles.addressText} numberOfLines={1}>
-                {(embeddedEthereum as any)?.address || 'Generating...'}
+                {embeddedEthereum?.address || 'Generating...'}
               </Text>
+              {embeddedEthereum?.address && (
+                <View style={styles.actionButtonsRow}>
+                  <TouchableOpacity 
+                    onPress={() => copyToClipboard(embeddedEthereum.address)}
+                    style={styles.actionIconButton}
+                  >
+                    <Ionicons name="copy-outline" size={16} color={Theme.colors.primary} />
+                    <Text style={styles.actionIconText}>Copy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => {
+                      setTransferChain('ethereum');
+                      setRecipientAddress('');
+                      setAmount('');
+                      setModalVisible(true);
+                    }}
+                    style={[styles.actionIconButton, { marginLeft: 16 }]}
+                  >
+                    <Ionicons name="send-outline" size={16} color="#059669" />
+                    <Text style={[styles.actionIconText, { color: '#059669' }]}>Send</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </Animated.View>
         </View>
@@ -192,6 +413,27 @@ export default function WalletSettingsScreen() {
               </View>
               <View style={styles.addressContainer}>
                 <Text style={styles.addressText} numberOfLines={1}>{externalSolana}</Text>
+                <View style={styles.actionButtonsRow}>
+                  <TouchableOpacity 
+                    onPress={() => copyToClipboard(externalSolana)}
+                    style={styles.actionIconButton}
+                  >
+                    <Ionicons name="copy-outline" size={16} color={Theme.colors.primary} />
+                    <Text style={styles.actionIconText}>Copy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => {
+                      setTransferChain('external-solana');
+                      setRecipientAddress('');
+                      setAmount('');
+                      setModalVisible(true);
+                    }}
+                    style={[styles.actionIconButton, { marginLeft: 16 }]}
+                  >
+                    <Ionicons name="send-outline" size={16} color="#059669" />
+                    <Text style={[styles.actionIconText, { color: '#059669' }]}>Send</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </Animated.View>
           ) : (
@@ -219,6 +461,82 @@ export default function WalletSettingsScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Transfer Funds Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalContent}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                Send {transferChain === 'ethereum' ? 'ETH' : 'SOL'}
+              </Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalCloseButton}>
+                <Ionicons name="close" size={24} color="#374151" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalForm}>
+              <Text style={styles.inputLabel}>Recipient Address</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter public address"
+                  placeholderTextColor="#9CA3AF"
+                  value={recipientAddress}
+                  onChangeText={setRecipientAddress}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity 
+                  onPress={async () => {
+                    const content = await Clipboard.getStringAsync();
+                    if (content) setRecipientAddress(content);
+                  }}
+                  style={styles.pasteButton}
+                >
+                  <Text style={styles.pasteButtonText}>Paste</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.inputLabel, { marginTop: 16 }]}>Amount</Text>
+              <TextInput
+                style={styles.amountInput}
+                placeholder="0.0"
+                placeholderTextColor="#9CA3AF"
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="numeric"
+              />
+
+              <TouchableOpacity 
+                style={[styles.sendButton, transferring && { opacity: 0.7 }]}
+                onPress={
+                  transferChain === 'solana' 
+                    ? handleTransferSolana 
+                    : transferChain === 'ethereum' 
+                    ? handleTransferEthereum 
+                    : handleTransferExternalSolana
+                }
+                disabled={transferring}
+              >
+                {transferring ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.sendButtonText}>Confirm & Send</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -352,5 +670,108 @@ const styles = StyleSheet.create({
     color: '#065F46',
     fontWeight: '600',
     lineHeight: 18,
-  }
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  actionIconButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  actionIconText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Theme.colors.primary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingBottom: 44,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalForm: {
+    width: '100%',
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 16,
+  },
+  textInput: {
+    flex: 1,
+    height: 54,
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '500',
+  },
+  pasteButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 10,
+  },
+  pasteButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Theme.colors.primary,
+  },
+  amountInput: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    height: 54,
+    fontSize: 18,
+    color: '#111827',
+    fontWeight: '700',
+    paddingHorizontal: 16,
+    marginBottom: 24,
+  },
+  sendButton: {
+    backgroundColor: Theme.colors.primary,
+    borderRadius: 16,
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
 });

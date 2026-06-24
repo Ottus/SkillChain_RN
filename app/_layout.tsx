@@ -4,7 +4,7 @@ import { PrivyProvider, useEmbeddedEthereumWallet, useEmbeddedSolanaWallet, useP
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { ActivityIndicator, Platform, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Image, Platform, Text, TouchableOpacity, View } from "react-native";
 
 function AuthStateListener() {
   const router = useRouter();
@@ -75,36 +75,12 @@ function AuthStateListener() {
   if (!isReady) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Theme.colors.background, padding: 32 }}>
-        <View style={{ width: 100, height: 100, borderRadius: 30, backgroundColor: '#EEF2FF', justifyContent: 'center', alignItems: 'center', marginBottom: 32 }}>
-          <Ionicons name="flash" size={50} color={Theme.colors.primary} />
+        <View style={{ width: 100, height: 100, borderRadius: 30, backgroundColor: '#EEF2FF', justifyContent: 'center', alignItems: 'center', marginBottom: 24 }}>
+          <Image source={require('../assets/images/img.png')} style={{ width: '100%', height: '100%', borderRadius: 30 }} resizeMode="contain" />
         </View>
         
         <ActivityIndicator size="small" color={Theme.colors.primary} />
         <Text style={{ marginTop: 24, color: Theme.colors.text, fontWeight: '800', fontSize: 22, letterSpacing: -0.5 }}>SkillChain</Text>
-        <Text style={{ marginTop: 8, color: Theme.colors.textMuted, textAlign: 'center', fontWeight: '500' }}>
-          Securely syncing your workspace...
-        </Text>
-
-        <View style={{ position: 'absolute', bottom: 50, left: 0, right: 0, alignItems: 'center', gap: 12, paddingHorizontal: 32 }}>
-          {!!user && (
-            <TouchableOpacity 
-              onPress={() => router.replace("/(tabs)")}
-              style={{ backgroundColor: '#111827', paddingHorizontal: 24, paddingVertical: 16, borderRadius: 12, width: '100%', marginBottom: 8 }}
-            >
-              <Text style={{ color: '#FFFFFF', textAlign: 'center', fontWeight: '800' }}>Manual Enter Dashboard</Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity onPress={() => logout()} style={{ padding: 10 }}>
-            <Text style={{ color: Theme.colors.primary, fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' }}>
-              Reset Session
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={{ color: '#D1D5DB', fontSize: 10, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', marginTop: 8 }}>
-            SDK_READY: {String(isReady)} • AUTH: {!!user ? 'YES' : 'NO'}
-          </Text>
-        </View>
       </View>
     );
   }
@@ -161,7 +137,7 @@ export default function RootLayout() {
           theme: 'light',
           accentColor: '#6366f1',
         },
-      }}
+      } as any}
     >
       <StatusBar style="light" />
       <AuthStateListener />
