@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLoginWithEmail, usePrivy } from '@privy-io/expo';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn, FadeInUp, FadeOut } from 'react-native-reanimated';
 
 export default function SignupScreen() {
@@ -16,35 +16,6 @@ export default function SignupScreen() {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [isCodeSent, setIsCodeSent] = useState(false);
-
-  // If already authenticated, redirecting happens in _layout, but we show loading here
-  if (isReady && authenticated) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Theme.colors.primary} />
-          <Text style={{ marginTop: 16, color: '#6B7280' }}>Signing you in...</Text>
-
-          <View style={{ marginTop: 40, padding: 20, backgroundColor: '#F3F4F6', borderRadius: 16, width: '100%' }}>
-            <Text style={{ color: '#4B5563', fontSize: 12, fontWeight: '700', marginBottom: 8 }}>DEBUG CONSOLE (SIGNUP)</Text>
-            <Text style={{ color: '#6B7280', fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
-              SDK Ready: true{"\n"}
-              User ID: {user?.id ? `${user.id.substring(0, 15)}...` : 'Loading...'}{"\n"}
-              Status: Authenticated
-            </Text>
-          </View>
-
-          <TouchableOpacity 
-            onPress={() => router.replace("/(tabs)")}
-            style={{ marginTop: 24, backgroundColor: Theme.colors.primary, paddingHorizontal: 24, paddingVertical: 16, borderRadius: 12, width: '100%' }}
-          >
-            <Text style={{ color: '#FFFFFF', textAlign: 'center', fontWeight: '700' }}>Manual Enter Dashboard</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
 
   const { sendCode, loginWithCode } = useLoginWithEmail({
     onSendCodeSuccess: () => {
@@ -60,6 +31,18 @@ export default function SignupScreen() {
       setLoading(false);
     }
   });
+
+  // If already authenticated, redirecting happens in _layout, but we show loading here
+  if (isReady && authenticated) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Theme.colors.primary} />
+          <Text style={{ marginTop: 16, color: '#6B7280' }}>Signing you in...</Text>
+        </View>
+      </View>
+    );
+  }
 
   const handleAuth = async () => {
     if (!email || (!isCodeSent && !fullName)) {
@@ -94,7 +77,7 @@ export default function SignupScreen() {
         <Animated.View entering={FadeInUp.duration(600)} style={styles.content}>
           <View style={styles.header}>
             <View style={styles.logoContainer}>
-              <Ionicons name="sparkles" size={40} color={Theme.colors.primary} />
+              <Image source={require('../../assets/images/img.png')} style={styles.logoImage} resizeMode="contain" />
             </View>
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>
@@ -197,6 +180,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 24,
   },
   title: {
     fontSize: 32,

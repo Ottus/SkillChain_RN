@@ -164,7 +164,7 @@ export default function SettingsScreen() {
           ethereum_address: (embeddedEthereum as any)?.address || null,
         };
         
-        const { error: insertError } = await supabase.from('profile').insert(newProfile);
+        const { error: insertError } = await supabase.from('profile').upsert(newProfile);
         if (insertError) console.error('Error creating initial profile:', insertError);
         else setProfile(newProfile as any);
       }
