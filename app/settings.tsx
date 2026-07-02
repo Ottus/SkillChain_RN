@@ -14,7 +14,8 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    Image
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 
@@ -250,17 +251,25 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Settings</Text>
-        </View>
+      {/* Header with back button */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#111827" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Settings</Text>
+      </View>
 
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* ACCOUNT SECTION */}
         <Text style={styles.sectionTitle}>Account</Text>
         <Animated.View entering={FadeInUp.delay(100)} style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarTextBlue}>{(profile?.full_name || 'U').charAt(0).toUpperCase()}</Text>
-          </View>
+          {profile?.avatar_url ? (
+            <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.avatar}>
+              <Text style={styles.avatarTextBlue}>{(profile?.full_name || 'U').charAt(0).toUpperCase()}</Text>
+            </View>
+          )}
           <View style={styles.profileDetails}>
             <Text style={styles.username}>{profile?.full_name || 'Skillchain User'}</Text>
             <Text style={styles.email}>{profile?.email}</Text>
@@ -404,9 +413,25 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { paddingHorizontal: 24, paddingTop: 64, paddingBottom: 120 },
-  header: { marginBottom: 24 },
-  title: { fontSize: 34, fontWeight: '800', color: '#111827' },
+  scrollContent: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 120 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 64,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  backButton: {
+    marginRight: 16,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#111827',
+  },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 16 },
   profileCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 24, flexDirection: 'row', alignItems: 'center', marginBottom: 28, borderWidth: 1, borderColor: '#E5E7EB' },
   avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center' },
@@ -451,5 +476,6 @@ const styles = StyleSheet.create({
   addSkillBtn: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center' },
   skillsRow: { flexDirection: 'row', flexWrap: 'wrap' },
   skillPill: { backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 8, marginBottom: 8 },
-  skillText: { fontSize: 12, fontWeight: '700' }
+  skillText: { fontSize: 12, fontWeight: '700' },
+  avatarImage: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#EEF2FF' }
 });

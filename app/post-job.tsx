@@ -14,9 +14,12 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    Image
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import * as ImagePicker from 'expo-image-picker';
+import { Buffer } from 'buffer';
 
 export default function PostJobScreen() {
   const router = useRouter();
@@ -33,6 +36,76 @@ export default function PostJobScreen() {
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
   const [showSalaryScaleDropdown, setShowSalaryScaleDropdown] = useState(false);
 
+  const [imageUri, setImageUri] = useState<string | null>(null);
+
+  const handleSelectImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission Denied', 'Camera roll permissions are required to select photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets[0].uri) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
+
+  const uploadImageToStorage = async (uri: string): Promise<string | null> => {
+    if (!user) return null;
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      // Convert Blob to ArrayBuffer using FileReader and Buffer (React Native friendly)
+      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === 'string') {
+            const base64 = reader.result.split(',')[1];
+            const buffer = Buffer.from(base64, 'base64');
+            resolve(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+          } else {
+            reject(new Error('Failed to read blob as base64'));
+          }
+        };
+        reader.onerror = () => {
+          reject(reader.error);
+        };
+        reader.readAsDataURL(blob);
+      });
+      
+      const fileExt = uri.split('.').pop() || 'jpg';
+      const fileName = `job_${user.id}_${Date.now()}.${fileExt}`;
+      
+      const { error } = await supabase.storage
+        .from('post-images')
+        .upload(fileName, arrayBuffer, {
+          contentType: blob.type || 'image/jpeg',
+        });
+
+      if (error) {
+        console.error('Storage upload error:', error);
+        throw error;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('post-images')
+        .getPublicUrl(fileName);
+
+      return publicUrl;
+    } catch (e: any) {
+      console.error('Error during image upload:', e);
+      Alert.alert('Upload Error', `Failed to upload image: ${e.message || e}`);
+      return null;
+    }
+  };
+
   const handlePublishJob = async () => {
     if (!title.trim() || !description.trim() || !applicationUrl.trim()) {
       Alert.alert('Error', 'Job Title, Description, and Application URL are required fields.');
@@ -46,6 +119,15 @@ export default function PostJobScreen() {
 
     setLoading(true);
     try {
+      let finalImageUrl = null;
+      if (imageUri) {
+        finalImageUrl = await uploadImageToStorage(imageUri);
+        if (!finalImageUrl) {
+          setLoading(false);
+          return;
+        }
+      }
+
       const { error } = await supabase.from('jobs').insert({
         user_id: user.id,
         title: title.trim(),
@@ -56,6 +138,7 @@ export default function PostJobScreen() {
         operation_mode: operationMode,
         contract_type: contractType,
         application_url: applicationUrl.trim(),
+        image_url: finalImageUrl,
       });
 
       if (error) throw error;
@@ -85,6 +168,27 @@ export default function PostJobScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Animated.View entering={FadeInUp.duration(600)} style={styles.form}>
+          {/* Logo / Image Picker */}
+          <View style={styles.imagePickerContainer}>
+            <Text style={styles.sectionLabel}>Company Logo / Job Image</Text>
+            <TouchableOpacity style={styles.imagePickerBox} onPress={handleSelectImage}>
+              {imageUri ? (
+                <View style={styles.imagePreviewContainer}>
+                  <Image source={{ uri: imageUri }} style={styles.imagePreview} />
+                  <View style={styles.changeImageOverlay}>
+                    <Ionicons name="camera" size={20} color="#FFFFFF" />
+                    <Text style={styles.changeImageText}>Change Image</Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.pickerPlaceholder}>
+                  <Ionicons name="image-outline" size={32} color="#9CA3AF" />
+                  <Text style={styles.pickerPlaceholderText}>Upload Company Logo or Job Image</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+
           {/* Job Title */}
           <TextInput 
             style={styles.input} 
@@ -445,5 +549,55 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  imagePickerContainer: {
+    marginBottom: 8,
+  },
+  imagePickerBox: {
+    height: 120,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#9CA3AF',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePreviewContainer: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  changeImageOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    gap: 6,
+  },
+  changeImageText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pickerPlaceholder: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  pickerPlaceholderText: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

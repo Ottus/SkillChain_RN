@@ -27,6 +27,9 @@ Copy and paste the contents of `supabase_setup_likes.sql` and run it. This creat
 #### 3. Notifications Table Setup
 Copy and paste the contents of `supabase_setup_notifications.sql` and run it. This creates the notifications table for like/comment notifications.
 
+#### 4. Storage Bucket Setup
+Copy and paste the contents of `supabase_setup_storage.sql` and run it. This creates the `post-images` storage bucket and configures its public read/write RLS policies.
+
 ### Step 3: Verify Tables
 
 After running the scripts, verify that the tables exist:

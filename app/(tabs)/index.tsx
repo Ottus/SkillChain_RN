@@ -17,9 +17,12 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    KeyboardAvoidingView,
+    Platform
 } from 'react-native';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
+import { Buffer } from 'buffer';
 
 interface Post {
   id: string;
@@ -319,7 +322,24 @@ export default function HomeFeedScreen() {
     try {
       const response = await fetch(uri);
       const blob = await response.blob();
-      const arrayBuffer = await new Response(blob).arrayBuffer();
+      
+      // Convert Blob to ArrayBuffer using FileReader and Buffer (React Native friendly)
+      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === 'string') {
+            const base64 = reader.result.split(',')[1];
+            const buffer = Buffer.from(base64, 'base64');
+            resolve(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+          } else {
+            reject(new Error('Failed to read blob as base64'));
+          }
+        };
+        reader.onerror = () => {
+          reject(reader.error);
+        };
+        reader.readAsDataURL(blob);
+      });
       
       const fileExt = uri.split('.').pop() || 'jpg';
       const fileName = `${user.id}_${Date.now()}.${fileExt}`;
@@ -331,8 +351,8 @@ export default function HomeFeedScreen() {
         });
 
       if (error) {
-        // Fallback: If bucket is missing or there's an error, try creating the URL directly
-        console.warn('Storage upload error (ignoring and returning direct path as fallback):', error);
+        console.error('Storage upload error:', error);
+        throw error;
       }
 
       const { data: { publicUrl } } = supabase.storage
@@ -340,9 +360,10 @@ export default function HomeFeedScreen() {
         .getPublicUrl(fileName);
 
       return publicUrl;
-    } catch (e) {
-      console.warn('Error during image upload, using local reference for testing:', e);
-      return uri; // Return uri as fallback
+    } catch (e: any) {
+      console.error('Error during image upload:', e);
+      Alert.alert('Upload Error', `Failed to upload image: ${e.message || e}`);
+      return null;
     }
   };
 
@@ -359,6 +380,10 @@ export default function HomeFeedScreen() {
       let finalImageUrl = null;
       if (createImageUri) {
         finalImageUrl = await uploadImageToStorage(createImageUri);
+        if (!finalImageUrl) {
+          setSubmittingPost(false);
+          return;
+        }
       }
 
       const newPost = {
@@ -560,59 +585,64 @@ export default function HomeFeedScreen() {
       >
         <View style={styles.modalOverlay}>
           <Animated.View entering={FadeInUp} style={styles.modalContent}>
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-                <Ionicons name="close" size={24} color="#1F2937" />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>New Post</Text>
-              <TouchableOpacity 
-                style={styles.postBtn}
-                onPress={handlePublishPost}
-                disabled={submittingPost}
-              >
-                {submittingPost ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.postBtnText}>Post</Text>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={{ flex: 1 }}
+            >
+              {/* Header */}
+              <View style={styles.modalHeader}>
+                <TouchableOpacity onPress={() => setShowCreateModal(false)}>
+                  <Ionicons name="close" size={24} color="#1F2937" />
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>New Post</Text>
+                <TouchableOpacity 
+                  style={styles.postBtn}
+                  onPress={handlePublishPost}
+                  disabled={submittingPost}
+                >
+                  {submittingPost ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.postBtnText}>Post</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {/* Input fields */}
+              <ScrollView contentContainerStyle={styles.modalScroll}>
+                <TextInput
+                  style={styles.postInput}
+                  placeholder="What is on your mind?"
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  value={createContent}
+                  onChangeText={setCreateContent}
+                />
+
+                {createImageUri && (
+                  <View style={styles.imagePreviewContainer}>
+                    <Image source={{ uri: createImageUri }} style={styles.imagePreview} />
+                    <TouchableOpacity 
+                      style={styles.removeImageBtn}
+                      onPress={() => setCreateImageUri(null)}
+                    >
+                      <Ionicons name="close-circle" size={24} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
                 )}
-              </TouchableOpacity>
-            </View>
 
-            {/* Input fields */}
-            <ScrollView contentContainerStyle={styles.modalScroll}>
-              <TextInput
-                style={styles.postInput}
-                placeholder="What is on your mind?"
-                placeholderTextColor="#9CA3AF"
-                multiline
-                value={createContent}
-                onChangeText={setCreateContent}
-              />
-
-              {createImageUri && (
-                <View style={styles.imagePreviewContainer}>
-                  <Image source={{ uri: createImageUri }} style={styles.imagePreview} />
-                  <TouchableOpacity 
-                    style={styles.removeImageBtn}
-                    onPress={() => setCreateImageUri(null)}
-                  >
-                    <Ionicons name="close-circle" size={24} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Add Attachment triggers */}
-              <TouchableOpacity 
-                style={styles.addImageRow}
-                onPress={handleSelectImage}
-              >
-                <Ionicons name="image-outline" size={22} color="#4F46E5" />
-                <Text style={styles.addImageText}>
-                  {createImageUri ? 'Change Accompanying Image' : 'Add Accompanying Image'}
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
+                {/* Add Attachment triggers */}
+                <TouchableOpacity 
+                  style={styles.addImageRow}
+                  onPress={handleSelectImage}
+                >
+                  <Ionicons name="image-outline" size={22} color="#4F46E5" />
+                  <Text style={styles.addImageText}>
+                    {createImageUri ? 'Change Accompanying Image' : 'Add Accompanying Image'}
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </KeyboardAvoidingView>
           </Animated.View>
         </View>
       </Modal>
@@ -625,7 +655,10 @@ export default function HomeFeedScreen() {
         onRequestClose={() => setShowCommentsPostId(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { height: '80%' }]}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[styles.modalContent, { height: '80%' }]}
+          >
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setShowCommentsPostId(null)}>
                 <Ionicons name="close" size={24} color="#1F2937" />
@@ -684,7 +717,7 @@ export default function HomeFeedScreen() {
                 )}
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 

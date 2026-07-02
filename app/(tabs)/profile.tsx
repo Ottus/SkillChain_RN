@@ -8,7 +8,10 @@ import {
   TextInput, 
   Modal, 
   Alert, 
-  ActivityIndicator 
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
 import { Theme } from '@/constants/Theme';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -17,6 +20,8 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 import { supabase } from '@/constants/Supabase';
 import { Cache } from '@/constants/Cache';
 import { usePrivy } from '@privy-io/expo';
+import * as ImagePicker from 'expo-image-picker';
+import { Buffer } from 'buffer';
 
 interface WorkExperience {
   role: string;
@@ -304,6 +309,103 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const uploadAvatarToStorage = async (uri: string): Promise<string | null> => {
+    if (!currentUserId) return null;
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      // Convert Blob to ArrayBuffer using FileReader and Buffer (React Native friendly)
+      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === 'string') {
+            const base64 = reader.result.split(',')[1];
+            const buffer = Buffer.from(base64, 'base64');
+            resolve(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+          } else {
+            reject(new Error('Failed to read blob as base64'));
+          }
+        };
+        reader.onerror = () => {
+          reject(reader.error);
+        };
+        reader.readAsDataURL(blob);
+      });
+      
+      const fileExt = uri.split('.').pop() || 'jpg';
+      const fileName = `avatar_${currentUserId}_${Date.now()}.${fileExt}`;
+      
+      const { error } = await supabase.storage
+        .from('post-images')
+        .upload(fileName, arrayBuffer, {
+          contentType: blob.type || 'image/jpeg',
+        });
+
+      if (error) {
+        console.error('Storage upload error:', error);
+        throw error;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('post-images')
+        .getPublicUrl(fileName);
+
+      return publicUrl;
+    } catch (e: any) {
+      console.error('Error during profile image upload:', e);
+      Alert.alert('Upload Error', `Failed to upload avatar: ${e.message || e}`);
+      return null;
+    }
+  };
+
+  const handleSelectProfilePicture = async () => {
+    if (!isOwnProfile || !currentUserId) return;
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Denied', 'Media library permissions are required to select photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets || !result.assets[0].uri) {
+        return;
+      }
+
+      const uri = result.assets[0].uri;
+      setLoading(true);
+
+      const uploadedUrl = await uploadAvatarToStorage(uri);
+      if (!uploadedUrl) {
+        throw new Error('Image upload failed.');
+      }
+
+      // Update avatar_url in DB
+      const { error } = await supabase
+        .from('profile')
+        .update({ avatar_url: uploadedUrl })
+        .eq('id', currentUserId);
+
+      if (error) throw error;
+
+      setProfile(prev => prev ? { ...prev, avatar_url: uploadedUrl } : null);
+      Alert.alert('Success', 'Profile picture updated successfully!');
+    } catch (e: any) {
+      console.error('Error uploading profile picture:', e.message);
+      Alert.alert('Error', e.message || 'Failed to upload profile picture.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -329,8 +431,11 @@ export default function ProfileScreen() {
           <Text style={styles.title}>{isOwnProfile ? 'My Profile' : 'User Profile'}</Text>
           {isOwnProfile && (
             <View style={styles.headerActions}>
-              <TouchableOpacity style={styles.headerActionBtn} onPress={handleLogout}>
-                <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+              <TouchableOpacity 
+                style={styles.headerActionBtn} 
+                onPress={() => router.push('/settings')}
+              >
+                <Ionicons name="settings-outline" size={24} color="#111827" />
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.headerActionBtn}
@@ -344,11 +449,26 @@ export default function ProfileScreen() {
 
         {/* Profile Card */}
         <Animated.View entering={FadeInUp.delay(100)} style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarTextBlue}>
-              {(profile.full_name || 'U').charAt(0).toUpperCase()}
-            </Text>
-          </View>
+          <TouchableOpacity 
+            disabled={!isOwnProfile}
+            onPress={handleSelectProfilePicture}
+            style={styles.avatarWrapper}
+          >
+            {profile.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarTextBlue}>
+                  {(profile.full_name || 'U').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+            {isOwnProfile && (
+              <View style={styles.cameraIconBadge}>
+                <Ionicons name="camera" size={12} color="#FFFFFF" />
+              </View>
+            )}
+          </TouchableOpacity>
           <View style={styles.profileDetails}>
             {isEditing ? (
               <TextInput
@@ -549,126 +669,141 @@ export default function ProfileScreen() {
 
       {/* WORK EXPERIENCE MODAL */}
       <Modal visible={activeModal === 'work'} animationType="fade" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalHeading}>Add Work Experience</Text>
-            
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Role / Position"
-              placeholderTextColor="#9CA3AF"
-              value={workRole}
-              onChangeText={setWorkRole}
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Company"
-              placeholderTextColor="#9CA3AF"
-              value={workCompany}
-              onChangeText={setWorkCompany}
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Dates (e.g. Jan 2021 - Present)"
-              placeholderTextColor="#9CA3AF"
-              value={workDates}
-              onChangeText={setWorkDates}
-            />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalHeading}>Add Work Experience</Text>
+              
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Role / Position"
+                placeholderTextColor="#9CA3AF"
+                value={workRole}
+                onChangeText={setWorkRole}
+              />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Company"
+                placeholderTextColor="#9CA3AF"
+                value={workCompany}
+                onChangeText={setWorkCompany}
+              />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Dates (e.g. Jan 2021 - Present)"
+                placeholderTextColor="#9CA3AF"
+                value={workDates}
+                onChangeText={setWorkDates}
+              />
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={styles.modalCancelBtn}
-                onPress={() => setActiveModal(null)}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.modalSaveBtn}
-                onPress={handleAddWorkExperience}
-              >
-                <Text style={styles.modalSaveText}>Save</Text>
-              </TouchableOpacity>
+              <View style={styles.modalActions}>
+                <TouchableOpacity 
+                  style={styles.modalCancelBtn}
+                  onPress={() => setActiveModal(null)}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.modalSaveBtn}
+                  onPress={handleAddWorkExperience}
+                >
+                  <Text style={styles.modalSaveText}>Save</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* EDUCATION MODAL */}
       <Modal visible={activeModal === 'edu'} animationType="fade" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalHeading}>Add Education</Text>
-            
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Institution"
-              placeholderTextColor="#9CA3AF"
-              value={eduInstitution}
-              onChangeText={setEduInstitution}
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Degree / Course of Study"
-              placeholderTextColor="#9CA3AF"
-              value={eduDegree}
-              onChangeText={setEduDegree}
-            />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalHeading}>Add Education</Text>
+              
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Institution"
+                placeholderTextColor="#9CA3AF"
+                value={eduInstitution}
+                onChangeText={setEduInstitution}
+              />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Degree / Course of Study"
+                placeholderTextColor="#9CA3AF"
+                value={eduDegree}
+                onChangeText={setEduDegree}
+              />
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={styles.modalCancelBtn}
-                onPress={() => setActiveModal(null)}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.modalSaveBtn}
-                onPress={handleAddEducation}
-              >
-                <Text style={styles.modalSaveText}>Save</Text>
-              </TouchableOpacity>
+              <View style={styles.modalActions}>
+                <TouchableOpacity 
+                  style={styles.modalCancelBtn}
+                  onPress={() => setActiveModal(null)}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.modalSaveBtn}
+                  onPress={handleAddEducation}
+                >
+                  <Text style={styles.modalSaveText}>Save</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* CERTIFICATIONS MODAL */}
       <Modal visible={activeModal === 'cert'} animationType="fade" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalHeading}>Add Certification</Text>
-            
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Certification Name"
-              placeholderTextColor="#9CA3AF"
-              value={certName}
-              onChangeText={setCertName}
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Issuing Authority"
-              placeholderTextColor="#9CA3AF"
-              value={certIssuer}
-              onChangeText={setCertIssuer}
-            />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalHeading}>Add Certification</Text>
+              
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Certification Name"
+                placeholderTextColor="#9CA3AF"
+                value={certName}
+                onChangeText={setCertName}
+              />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Issuing Authority"
+                placeholderTextColor="#9CA3AF"
+                value={certIssuer}
+                onChangeText={setCertIssuer}
+              />
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={styles.modalCancelBtn}
-                onPress={() => setActiveModal(null)}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.modalSaveBtn}
-                onPress={handleAddCertification}
-              >
-                <Text style={styles.modalSaveText}>Save</Text>
-              </TouchableOpacity>
+              <View style={styles.modalActions}>
+                <TouchableOpacity 
+                  style={styles.modalCancelBtn}
+                  onPress={() => setActiveModal(null)}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.modalSaveBtn}
+                  onPress={handleAddCertification}
+                >
+                  <Text style={styles.modalSaveText}>Save</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -961,5 +1096,27 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
+  },
+  avatarWrapper: {
+    position: 'relative',
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#EEF2FF',
+  },
+  cameraIconBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#3B82F6',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
   },
 });

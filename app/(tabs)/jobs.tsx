@@ -14,7 +14,8 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    Image
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 
@@ -30,6 +31,7 @@ interface Job {
   contract_type: 'FULL TIME' | 'CONTRACT';
   application_url: string | null;
   created_at: string;
+  image_url: string | null;
   profile: {
     full_name: string;
   } | null;
@@ -148,6 +150,13 @@ export default function JobsScreen() {
               style={styles.jobCard}
             >
               <View style={styles.jobHeader}>
+                {job.image_url ? (
+                  <Image source={{ uri: job.image_url }} style={styles.jobLogo} />
+                ) : (
+                  <View style={[styles.jobLogo, styles.jobLogoPlaceholder]}>
+                    <Ionicons name="briefcase" size={20} color="#9CA3AF" />
+                  </View>
+                )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.jobTitle}>{job.title}</Text>
                   <Text style={styles.postedBy}>Posted by {job.profile?.full_name || 'Anonymous'}</Text>
@@ -380,5 +389,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
+  },
+  jobLogo: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+  },
+  jobLogoPlaceholder: {
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
 });
