@@ -4,7 +4,7 @@
 -- 1. Create the likes table if it doesn't exist
 CREATE TABLE IF NOT EXISTS likes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES profile(id) ON DELETE CASCADE,
   post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
   UNIQUE(user_id, post_id) -- Prevent duplicate likes
@@ -18,21 +18,21 @@ DROP POLICY IF EXISTS "Likes are viewable by everyone" ON likes;
 DROP POLICY IF EXISTS "Users can insert their own likes" ON likes;
 DROP POLICY IF EXISTS "Users can delete their own likes" ON likes;
 
--- 4. Create RLS policies
+-- 4. Create RLS policies (Privy-friendly)
 -- Allow users to see all likes (needed for counting)
 CREATE POLICY "Likes are viewable by everyone"
   ON likes FOR SELECT
   USING (true);
 
--- Allow users to insert their own likes
+-- Allow users to insert likes
 CREATE POLICY "Users can insert their own likes"
   ON likes FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (true);
 
--- Allow users to delete their own likes
+-- Allow users to delete likes
 CREATE POLICY "Users can delete their own likes"
   ON likes FOR DELETE
-  USING (auth.uid() = user_id);
+  USING (true);
 
 -- 5. Create indexes for better performance
 CREATE INDEX IF NOT EXISTS likes_post_id_idx ON likes(post_id);

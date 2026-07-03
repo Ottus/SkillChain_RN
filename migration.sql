@@ -53,5 +53,16 @@ CREATE POLICY "Allow all comment creation" ON public.comments FOR INSERT WITH CH
 CREATE POLICY "Allow message exchange" ON public.messages FOR SELECT USING (true);
 CREATE POLICY "Allow sending messages" ON public.messages FOR INSERT WITH CHECK (true);
 
+-- Likes: Allow public reads, insertions, and deletions for Privy compatibility
+CREATE POLICY "Allow public likes selection" ON public.likes FOR SELECT USING (true);
+CREATE POLICY "Allow all like insertion" ON public.likes FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow all like deletion" ON public.likes FOR DELETE USING (true);
+
+-- Notifications: Allow public reads, insertions, updates, and deletions for Privy compatibility
+CREATE POLICY "Allow public notifications selection" ON public.notifications FOR SELECT USING (true);
+CREATE POLICY "Allow all notifications insertion" ON public.notifications FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow all notifications update" ON public.notifications FOR UPDATE USING (true);
+CREATE POLICY "Allow all notifications deletion" ON public.notifications FOR DELETE USING (true);
+
 -- NOTE: In production, you should verify the Privy JWT in a database function
 -- or via Supabase Edge Functions to ensure 'id' matches the authenticated user.

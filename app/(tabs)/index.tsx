@@ -308,7 +308,7 @@ export default function HomeFeedScreen() {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
+      allowsEditing: false,
       quality: 0.8,
     });
 
@@ -494,7 +494,7 @@ export default function HomeFeedScreen() {
                     <Image 
                       source={{ uri: post.image_url }} 
                       style={styles.postImage} 
-                      resizeMode="cover"
+                      resizeMode="contain"
                     />
                   )}
 
@@ -621,7 +621,7 @@ export default function HomeFeedScreen() {
 
                 {createImageUri && (
                   <View style={styles.imagePreviewContainer}>
-                    <Image source={{ uri: createImageUri }} style={styles.imagePreview} />
+                    <Image source={{ uri: createImageUri }} style={styles.imagePreview} resizeMode="contain" />
                     <TouchableOpacity 
                       style={styles.removeImageBtn}
                       onPress={() => setCreateImageUri(null)}
@@ -833,9 +833,10 @@ const styles = StyleSheet.create({
   },
   postImage: {
     width: '100%',
-    height: 200,
+    height: 250,
     borderRadius: 12,
     marginBottom: 16,
+    backgroundColor: '#F3F4F6',
   },
   divider: {
     height: 1,
@@ -972,6 +973,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 180,
     borderRadius: 12,
+    backgroundColor: '#F3F4F6',
   },
   removeImageBtn: {
     position: 'absolute',

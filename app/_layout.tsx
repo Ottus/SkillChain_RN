@@ -5,6 +5,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { ActivityIndicator, Image, Platform, Text, TouchableOpacity, View } from "react-native";
+import { supabase } from '@/constants/Supabase';
 
 function AuthStateListener() {
   const router = useRouter();
@@ -12,6 +13,59 @@ function AuthStateListener() {
   const { user, isReady, error, logout } = usePrivy();
   const solanaWallet = useEmbeddedSolanaWallet();
   const ethereumWallet = useEmbeddedEthereumWallet();
+
+  useEffect(() => {
+    const syncProfile = async () => {
+      if (!user) return;
+      try {
+        const { data, error } = await supabase
+          .from('profile')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.error('[AuthStateListener] Error checking profile:', error);
+          return;
+        }
+
+        if (!data) {
+          console.log('[AuthStateListener] Profile not found. Creating default profile...');
+          const emailAccount = user.linked_accounts?.find((acc: any) => acc.type === 'email' || acc.email);
+          const emailAddress = emailAccount?.address || emailAccount?.email || user.email || '';
+          const fullName = emailAddress ? emailAddress.split('@')[0] : 'SkillChain User';
+          
+          const newProfile = {
+            id: user.id,
+            email: emailAddress,
+            full_name: fullName,
+            skills: [],
+            work_experience: [],
+            education: [],
+            certifications: [],
+            solana_address: null,
+            ethereum_address: null,
+          };
+
+          const { error: insertError } = await supabase
+            .from('profile')
+            .insert(newProfile);
+
+          if (insertError) {
+            console.error('[AuthStateListener] Error creating default profile:', insertError);
+          } else {
+            console.log('[AuthStateListener] Default profile created successfully');
+          }
+        }
+      } catch (profileErr) {
+        console.error('[AuthStateListener] Profile sync exception:', profileErr);
+      }
+    };
+
+    if (isReady && user) {
+      syncProfile();
+    }
+  }, [user, isReady]);
 
   useEffect(() => {
     const isUserLoggedIn = !!user;
